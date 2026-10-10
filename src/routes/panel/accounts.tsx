@@ -17,6 +17,7 @@ import { EmptyState } from "~/components/ui/empty-state";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Segmented } from "~/components/ui/segmented";
+import { Select } from "~/components/ui/select";
 import { Sheet, SheetClose } from "~/components/ui/sheet";
 import { Switch } from "~/components/ui/switch";
 import {
@@ -329,30 +330,21 @@ export default function PanelAccounts() {
       >
         <div class="space-y-4">
           <div class="space-y-1.5">
-            <Label>目标渠道组</Label>
-            <div class="space-y-1">
-              <For each={accountGroups}>
-                {group => (
-                  <button
-                    type="button"
-                    onClick={() => setGroupId(group.id)}
-                    aria-pressed={groupId() === group.id}
-                    class={cn(
-                      "flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                      "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                      groupId() === group.id
-                        ? "border-primary bg-accent"
-                        : "hover:bg-accent/60",
-                    )}
-                  >
-                    <span class="min-w-0 truncate">{group.name}</span>
-                    <span class="shrink-0 text-xs text-muted-foreground">
-                      {group.owned_by_me ? "我的" : "平台指定"}
-                    </span>
-                  </button>
-                )}
-              </For>
-            </div>
+            <Select
+              label="目标渠道组"
+              placeholder="选择目标渠道组"
+              options={accountGroups.map(group => ({
+                value: String(group.id),
+                label: `${group.name} · ${group.owned_by_me ? "我的" : "平台指定"}`,
+              }))}
+              value={groupId() === null ? null : String(groupId())}
+              onChange={value => setGroupId(Number(value))}
+              // 弹层不挂到 body：对话框的焦点陷阱与 aria-hide 会把 portal 出去的内容挡在外面
+              portal={false}
+            />
+            <p class="text-xs text-muted-foreground">
+              平台开放挂账的渠道组，以及你申请通过的组会出现在这里。
+            </p>
           </div>
 
           <Show when={selectedGroup()}>

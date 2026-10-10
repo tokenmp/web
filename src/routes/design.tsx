@@ -1,6 +1,6 @@
 import { Title } from "@solidjs/meta";
 import { A } from "@solidjs/router";
-import { For, type JSX } from "solid-js";
+import { createSignal, For, type JSX } from "solid-js";
 
 import { ThemeToggle } from "~/components/layout/app-shell";
 import { Badge } from "~/components/ui/badge";
@@ -9,6 +9,8 @@ import { Card } from "~/components/ui/card";
 import { Dialog, DialogClose } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { Segmented } from "~/components/ui/segmented";
+import { Select } from "~/components/ui/select";
 import { Sheet, SheetClose } from "~/components/ui/sheet";
 import { cn } from "~/lib/utils";
 
@@ -46,19 +48,34 @@ const layout = [
 
 const pages = [
   { route: "/", name: "登录", status: "done" },
-  { route: "/dashboard", name: "概览", status: "done" },
   { route: "/design", name: "设计系统", status: "done" },
-  { route: "/dashboard/users", name: "用户列表", status: "todo" },
-  { route: "/dashboard/balances", name: "余额", status: "todo" },
-  { route: "/dashboard/api-keys", name: "API 密钥", status: "todo" },
-  { route: "/dashboard/plans", name: "套餐", status: "todo" },
-  { route: "/dashboard/billing", name: "计费", status: "todo" },
-  { route: "/dashboard/channels", name: "渠道", status: "todo" },
-  { route: "/dashboard/channel-groups", name: "渠道分组", status: "todo" },
-  { route: "/dashboard/channel-applications", name: "渠道申请", status: "todo" },
+  { route: "/dashboard", name: "控制台概览", status: "done" },
+  { route: "/dashboard/users", name: "用户列表", status: "done" },
+  { route: "/dashboard/balances", name: "余额", status: "done" },
+  { route: "/dashboard/api-keys", name: "API 密钥", status: "done" },
+  { route: "/dashboard/plans", name: "套餐", status: "done" },
+  { route: "/dashboard/billing", name: "计费", status: "done" },
+  { route: "/dashboard/channels", name: "渠道", status: "done" },
+  { route: "/dashboard/channel-groups", name: "渠道分组", status: "done" },
+  { route: "/dashboard/channel-applications", name: "渠道申请", status: "done" },
+  { route: "/dashboard/announcements", name: "公告管理", status: "done" },
+  { route: "/panel", name: "面板概览", status: "done" },
+  { route: "/panel/keys", name: "我的密钥", status: "done" },
+  { route: "/panel/models", name: "模型目录", status: "done" },
+  { route: "/panel/request-records", name: "请求日志", status: "done" },
+  { route: "/panel/billing", name: "账单流水", status: "done" },
+  { route: "/panel/credits", name: "余额明细", status: "done" },
+  { route: "/panel/plans", name: "套餐", status: "done" },
+  { route: "/panel/accounts", name: "我的账号", status: "done" },
+  { route: "/panel/channels", name: "我的渠道", status: "done" },
+  { route: "/panel/me", name: "个人中心", status: "done" },
 ];
 
 export default function DesignSystem() {
+  const [selectValue, setSelectValue] = createSignal<string | null>("pro");
+  const [filterValue, setFilterValue] = createSignal("all");
+  const [segmentValue, setSegmentValue] = createSignal("全部");
+
   return (
     <main class="min-h-dvh bg-background">
       <Title>设计系统 | TokenMP 销售控制台</Title>
@@ -158,6 +175,52 @@ export default function DesignSystem() {
             <div class="space-y-2">
               <Label for="demo-disabled">已停用</Label>
               <Input id="demo-disabled" value="不可编辑" disabled />
+            </div>
+          </Card>
+        </Section>
+
+        <Section
+          title="选择"
+          hint="选项少于四个用分段控件（一眼看全），选项多或文字长就用下拉。"
+        >
+          <Card class="grid max-w-2xl gap-5 p-5 sm:grid-cols-2">
+            <div class="space-y-2">
+              <Select
+                label="套餐"
+                placeholder="选择套餐"
+                options={[
+                  { value: "standard", label: "标准版月付" },
+                  { value: "pro", label: "专业版月付" },
+                  { value: "enterprise", label: "企业版年付" },
+                  { value: "metered", label: "按量付费" },
+                ]}
+                value={selectValue()}
+                onChange={setSelectValue}
+              />
+              <p class="text-xs text-muted-foreground">
+                上下键加回车可选；选项超过一屏时列表自己滚。
+              </p>
+            </div>
+
+            <div class="space-y-2">
+              <Select
+                label="筛选"
+                labelPlacement="inline"
+                placeholder="全部模型"
+                options={[
+                  { value: "all", label: "全部模型" },
+                  { value: "gpt-4o", label: "gpt-4o" },
+                  { value: "claude-sonnet-4", label: "claude-sonnet-4" },
+                ]}
+                value={filterValue()}
+                onChange={setFilterValue}
+              />
+              <Segmented
+                options={["全部", "成功", "失败"]}
+                value={segmentValue()}
+                onChange={setSegmentValue}
+                ariaLabel="演示分段控件"
+              />
             </div>
           </Card>
         </Section>

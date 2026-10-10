@@ -14,12 +14,20 @@ import { DecimalSplit } from "~/components/ui/decimal-split";
 import { Input } from "~/components/ui/input";
 import { PagerIfNeeded } from "~/components/ui/pager";
 import { Segmented } from "~/components/ui/segmented";
+import { Select } from "~/components/ui/select";
 import { Sheet, SheetClose } from "~/components/ui/sheet";
 import { billingRecords, type BillingRecord } from "~/lib/panel-data";
 import { billingStatusMeta, ledgerMeta } from "~/lib/panel-labels";
 import { formatDateTime, formatLatency, formatNumber, formatPoints, formatRelativeTime } from "~/lib/utils";
 
 const PAGE_SIZE = 10;
+
+const MODEL_OPTIONS = [
+  { value: "all", label: "全部模型" },
+  ...[...new Set(billingRecords.map(record => record.model))]
+    .sort()
+    .map(model => ({ value: model, label: model })),
+];
 
 const LEDGER_TABS = [
   { value: "all", label: "全部扣费" },
@@ -45,29 +53,33 @@ type StatusFilter = (typeof STATUS_TABS)[number]["value"];
  */
 export default function PanelBilling() {
   const [keyword, setKeyword] = createSignal("");
+  const [model, setModel] = createSignal("all");
   const [status, setStatus] = createSignal<StatusFilter>("all");
   const [ledger, setLedger] = createSignal<LedgerFilter>("all");
   const [page, setPage] = createSignal(1);
+  const [pageSize, setPageSize] = createSignal(PAGE_SIZE);
 
   const filtered = createMemo(() => {
     const query = keyword().trim().toLowerCase();
     return billingRecords.filter(record => {
       const matchStatus = status() === "all" || record.status === status();
       const matchLedger = ledger() === "all" || record.ledger === ledger();
+      const matchModel = model() === "all" || record.model === model();
       const matchQuery =
         query === "" ||
         record.request_id.toLowerCase().includes(query) ||
         record.model.toLowerCase().includes(query);
-      return matchStatus && matchLedger && matchQuery;
+      return matchStatus && matchLedger && matchModel && matchQuery;
     });
   });
 
-  const paged = createMemo(() => filtered().slice((page() - 1) * PAGE_SIZE, page() * PAGE_SIZE));
+  const paged = createMemo(() => filtered().slice((page() - 1) * pageSize(), page() * pageSize()));
   const revenueTotal = () =>
     filtered().reduce((sum, record) => sum + record.revenue_amount, 0);
 
   const reset = () => {
     setKeyword("");
+    setModel("all");
     setStatus("all");
     setLedger("all");
     setPage(1);
@@ -111,6 +123,17 @@ export default function PanelBilling() {
               setPage(1);
             }}
             ariaLabel="按扣费方式筛选"
+          />
+          <Select
+            label="模型"
+            labelPlacement="inline"
+            class="w-full sm:w-44"
+            options={MODEL_OPTIONS}
+            value={model()}
+            onChange={value => {
+              setModel(value);
+              setPage(1);
+            }}
           />
           <Button variant="outline" class="lg:ml-auto" onClick={reset}>
             重置
@@ -192,9 +215,13 @@ export default function PanelBilling() {
               <BillingDetail record={record} />
             </Sheet>
           )}
-          empty={keyword() || status() !== "all" || ledger() !== "all" ? "没有匹配的记录" : "暂无流水"}
+          empty={
+            keyword() || status() !== "all" || ledger() !== "all" || model() !== "all"
+              ? "没有匹配的记录"
+              : "暂无流水"
+          }
           emptyDescription={
-            keyword() || status() !== "all" || ledger() !== "all"
+            keyword() || status() !== "all" || ledger() !== "all" || model() !== "all"
               ? "试试调整搜索词或筛选条件"
               : "还没有产生计费记录"
           }
@@ -207,9 +234,13 @@ export default function PanelBilling() {
           </p>
           <PagerIfNeeded
             page={page()}
-            size={PAGE_SIZE}
+            size={pageSize()}
             total={filtered().length}
             onPageChange={setPage}
+            onSizeChange={value => {
+              setPageSize(value);
+              setPage(1);
+            }}
           />
         </div>
       </Card>

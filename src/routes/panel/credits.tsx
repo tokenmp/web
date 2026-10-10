@@ -43,9 +43,10 @@ function ledgerParts(tx: BalanceTransaction) {
  */
 export default function PanelCredits() {
   const [page, setPage] = createSignal(1);
+  const [pageSize, setPageSize] = createSignal(PAGE_SIZE);
 
   const paged = createMemo(() =>
-    balanceTransactions.slice((page() - 1) * PAGE_SIZE, page() * PAGE_SIZE),
+    balanceTransactions.slice((page() - 1) * pageSize(), page() * pageSize()),
   );
 
   const summary = () => [
@@ -132,9 +133,13 @@ export default function PanelCredits() {
         <div class="px-5">
           <PagerIfNeeded
             page={page()}
-            size={PAGE_SIZE}
+            size={pageSize()}
             total={panelCredits.total}
             onPageChange={setPage}
+            onSizeChange={value => {
+              setPageSize(value);
+              setPage(1);
+            }}
           />
         </div>
       </Card>

@@ -83,10 +83,11 @@
 | Segmented | [segmented.tsx](src/components/ui/segmented.tsx) | 分段切换，选中项用主色实心底；选项可传字符串数组或 {value, label} |
 | Table | [table.tsx](src/components/ui/table.tsx) | Table、TableHeader、TableBody、TableRow、TableHead、TableCell，窄屏横向滚动 |
 | Textarea | [textarea.tsx](src/components/ui/textarea.tsx) | 单一形态，样式跟 Input 一致，用于公告正文 |
+| Select | [select.tsx](src/components/ui/select.tsx) | 下拉选择，Kobalte 原语。对外只暴露「选项值字符串」（`string \| null`），Kobalte 认的选项对象换算收在组件里。放在 Dialog 里要传 `portal={false}`，标签交给它的 `label` 属性渲染（Kobalte 只认自己注册的标签 id） |
 | Switch | [switch.tsx](src/components/ui/switch.tsx) | 开关，Kobalte 原语，真实 checkbox 藏在圆点下面（键盘与读屏都能用） |
 | EmptyState | [empty-state.tsx](src/components/ui/empty-state.tsx) | 空态：标题、说明与可选操作，失败态另写 |
 | DecimalSplit | [decimal-split.tsx](src/components/ui/decimal-split.tsx) | 大数拆分：整数部分常规、小数部分更小更淡 |
-| Pager | [pager.tsx](src/components/ui/pager.tsx) | 分页条，`PagerIfNeeded` 只在一页放不下时才出现 |
+| Pager | [pager.tsx](src/components/ui/pager.tsx) | 分页条，带每页条数下拉；`PagerIfNeeded` 只在一页放不下时才出现 |
 | Dialog | [dialog.tsx](src/components/ui/dialog.tsx) | 居中模态，底部操作区可自定义，配套 `DialogClose` |
 | Sheet | [sheet.tsx](src/components/ui/sheet.tsx) | `side="right"` 右侧抽屉（手机 92vw、平板 26rem、桌面 32rem），`side="bottom"` 底部抽屉，配套 `SheetClose`；宽度可用 `class` 覆盖 |
 

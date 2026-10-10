@@ -16,6 +16,7 @@ import { EmptyState } from "~/components/ui/empty-state";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Segmented } from "~/components/ui/segmented";
+import { Select } from "~/components/ui/select";
 import {
   accountGroups,
   catalogModels,
@@ -462,22 +463,17 @@ export default function PanelChannels() {
                 addModel(modelDraft());
               }}
             />
-            <div class="flex flex-wrap gap-1.5 pt-1">
-              <For each={PLATFORM_MODELS.filter(item => !models().includes(item))}>
-                {model => (
-                  <button
-                    type="button"
-                    onClick={() => addModel(model)}
-                    class={cn(
-                      "rounded-md border px-2 py-0.5 text-xs text-muted-foreground transition-colors",
-                      "hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                    )}
-                  >
-                    + {model}
-                  </button>
-                )}
-              </For>
-            </div>
+            <Select
+              placeholder="从平台已有模型中选择"
+              options={PLATFORM_MODELS.filter(item => !models().includes(item)).map(model => ({
+                value: model,
+                label: model,
+              }))}
+              value={null}
+              onChange={model => addModel(model)}
+              disabled={PLATFORM_MODELS.every(item => models().includes(item))}
+              portal={false}
+            />
           </div>
 
           <Show when={notice()}>

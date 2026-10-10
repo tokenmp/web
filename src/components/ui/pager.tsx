@@ -3,7 +3,10 @@ import ChevronRight from "lucide-solid/icons/chevron-right";
 import { Show } from "solid-js";
 
 import { Button } from "~/components/ui/button";
+import { Select } from "~/components/ui/select";
 import { formatNumber } from "~/lib/utils";
+
+const DEFAULT_SIZES = [10, 20, 50, 100];
 
 /**
  * 分页条。桌面与手机同一份 —— 线上手机端是「卡片流 + 加载更多」，
@@ -16,12 +19,28 @@ export function Pager(props: {
   size: number;
   total: number;
   onPageChange: (page: number) => void;
+  /** 传了才显示「每页条数」。改完记得把页码归 1（调用方在 onSizeChange 里做） */
+  onSizeChange?: (size: number) => void;
+  sizeOptions?: number[];
 }) {
   const totalPages = () => Math.max(1, Math.ceil(props.total / props.size));
+  const sizes = () => props.sizeOptions ?? DEFAULT_SIZES;
 
   return (
-    <div class="flex items-center justify-between gap-3 py-3">
-      <span class="text-sm text-muted-foreground">共 {formatNumber(props.total)} 条</span>
+    <div class="flex flex-wrap items-center justify-between gap-3 py-3">
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-muted-foreground">共 {formatNumber(props.total)} 条</span>
+        <Show when={props.onSizeChange}>
+          <Select
+            label="每页"
+            labelPlacement="inline"
+            class="w-[5.5rem]"
+            options={sizes().map(size => ({ value: String(size), label: `${size} 条` }))}
+            value={String(props.size)}
+            onChange={value => props.onSizeChange?.(Number(value))}
+          />
+        </Show>
+      </div>
 
       <div class="flex items-center gap-2">
         <span class="text-sm text-muted-foreground">
@@ -54,15 +73,25 @@ export function Pager(props: {
   );
 }
 
-/** 只在一页里放得下时才显示分页：数据少的时候多一条分页条只是噪声 */
+/**
+ * 只在一页里放得下时才显示分页：数据少的时候多一条分页条只是噪声。
+ *
+ * 判据取「最小档的每页条数」而不是当前档 —— 否则用户刚把每页切到 50，
+ * 分页条自己就消失了，切回去的入口也没了。
+ */
 export function PagerIfNeeded(props: {
   page: number;
   size: number;
   total: number;
   onPageChange: (page: number) => void;
+  onSizeChange?: (size: number) => void;
+  sizeOptions?: number[];
 }) {
+  const threshold = () =>
+    props.onSizeChange ? Math.min(...(props.sizeOptions ?? DEFAULT_SIZES)) : props.size;
+
   return (
-    <Show when={props.total > props.size}>
+    <Show when={props.total > threshold()}>
       <Pager {...props} />
     </Show>
   );
