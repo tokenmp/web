@@ -14,7 +14,10 @@ sudo docker compose down       # 停库
 sudo docker compose down -v    # 停库并清空数据
 ```
 
-首次启动会自动执行 [db/init/01-schema.sql](db/init/01-schema.sql) 建表。
+首次启动会按文件名顺序执行 [db/init](db/init) 下的脚本建表：`01-schema.sql` 是用户表，
+`02-system.sql` 是版本、公告、通知，末尾附带几条种子数据。
+
+> `docker compose up` 每次都会重跑这些脚本，所以里面的 `INSERT` 都带 `WHERE NOT EXISTS`。
 
 > 本地这个账号不在 `docker` 组里，所以命令前面得加 `sudo`。要免掉的话：
 > `sudo usermod -aG docker $USER`，然后重新登录。
@@ -103,6 +106,34 @@ bun run start     # 运行生产构建
 发通知带 `idempotency_key` 时按它去重，批量发会在键后接上用户 id，
 否则所有人共用一个键、只有第一个收得到。
 
+### 界面
+
+| 东西 | 出现在哪 | 前端文件 |
+| --- | --- | --- |
+| 版本 | 桌面端侧边栏底部、移动端「更多」抽屉末尾 | [app-shell.tsx](src/components/layout/app-shell.tsx) 的 `VersionLabel` |
+| 公告 | 控制台内容区顶部与登录页顶部，按级别着色，可关闭 | [announcement-banner.tsx](src/components/layout/announcement-banner.tsx) |
+| 通知 | 顶栏铃铛，带未读数，点开是最近 20 条 | [notification-bell.tsx](src/components/layout/notification-bell.tsx) |
+| 公告管理 | `/dashboard/announcements` | [announcements.tsx](src/routes/dashboard/announcements.tsx) |
+
+数据走 [src/lib/system.ts](src/lib/system.ts)，都是同源的 `fetch`，形状与
+[openapi.yaml](openapi.yaml) 一致（snake_case）。没用 `createResource`：它在 SSR 阶段也会执行，
+而服务端对相对路径的 `fetch` 会抛 `Failed to parse URL`，所以统一用
+[src/lib/resource.ts](src/lib/resource.ts) 的 `createClientResource`，挂载到浏览器后再取。
+代价是首帧没有内容 —— 公告条会晚一拍出现。
+
+几个实现上的选择：
+
+- 公告条关掉是先收起来再发请求。未登录时 `POST /api/announcements/{id}/dismiss` 返回 401，
+  这时退回 `localStorage` 记一笔，登录用户则由服务端记（换台设备也不会重新弹）。
+- 初始化脚本里带了一条公告和一条欢迎通知作种子，新起的库一登录就能看到两处的样子。
+  两条都写了 `WHERE NOT EXISTS` —— `docker compose up` 每次都会重跑 `db/init` 下的脚本。
+- 通知的已读是乐观更新：先改本地，失败再整份重拉。接口本身幂等，重试不会出错。
+- 公告管理页的列表把草稿和归档的也算上，筛选在本地做（一次请求拿回整份列表）。
+  行内一个按钮兼顾发布与归档：草稿和归档过的点「发布」，已发布的点「归档」。
+
+通知的管理端（给指定用户发通知）没做界面：接口要 `user_id`，而用户列表页现在还是示例数据，
+没有能拿到真实 id 的接口。等用户端接上真实数据再补。
+
 ## 接口文档
 
 [openapi.yaml](openapi.yaml) 描述后端接口，同时盖两套东西：
@@ -128,7 +159,7 @@ bunx @redocly/cli lint openapi.yaml
 
 桌面端用左侧固定侧边栏装下全部导航，顶栏右上角是账户菜单（身份信息、主题切换、退出登录）。
 
-移动端不用抽屉 —— 抽屉要先点开汉堡、找到目标、再关掉，去一个常用页面得走三步。改成底部导航：四个最常点的（概览、用户、余额、计费）加一个「更多」，其余入口收在「更多」的底部抽屉里。九项塞不进底栏，所以只挑常用的，账户菜单同样在右上角。
+移动端不用抽屉 —— 抽屉要先点开汉堡、找到目标、再关掉，去一个常用页面得走三步。改成底部导航：四个最常点的（概览、用户、余额、计费）加一个「更多」，其余入口收在「更多」的底部抽屉里。十项塞不进底栏，所以只挑常用的，账户菜单同样在右上角。
 
 几个跟着来的细节：底部导航固定占 64px，正文要留 pb-24，否则最后一行会被压住；底栏和顶栏都加了 safe-area padding，iPhone 的底部手势条不会盖住导航；指标行在手机上用两列，单列会把四张卡铺满一整屏。
 
@@ -146,8 +177,8 @@ props 上的字段是惰性 getter。同一个 JSX 类型的 prop 在一处读�
 | --- | --- |
 | [src/routes](src/routes) | 文件路由，`index.tsx` 是登录页，`dashboard.tsx` 是控制台布局，`api/auth/` 是登录相关接口 |
 | [src/components/ui](src/components/ui) | 基础组件，shadcn/ui 写法 |
-| [src/components/layout](src/components/layout) | 控制台外壳 |
+| [src/components/layout](src/components/layout) | 控制台外壳、公告条、通知铃铛、页头 |
 | [src/store](src/store) | 外观偏好 |
-| [src/lib](src/lib) | 类名合并、数字格式化、数据库连接与认证 |
+| [src/lib](src/lib) | 类名合并、数字与时间格式化、数据库连接、认证、系统级数据（`system.ts`） |
 | [docker-compose.yml](docker-compose.yml) | 本地开发用的 MySQL |
 | [db/init](db/init) | 建表脚本，容器首次启动时执行 |

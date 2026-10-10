@@ -52,6 +52,7 @@
 | `/dashboard/channels` | 渠道 | 已实现，示例数据 |
 | `/dashboard/channel-groups` | 渠道分组 | 已实现，示例数据 |
 | `/dashboard/channel-applications` | 渠道申请 | 已实现，示例数据 |
+| `/dashboard/announcements` | 公告管理，草稿到发布的流程 | 已实现，接了后端接口 |
 
 线上另外还有一套用户侧页面（`/panel` 下的概览、密钥、账单、模型、渠道、我的），本地还没开始。
 
@@ -70,6 +71,7 @@
 | Badge | [badge.tsx](src/components/ui/badge.tsx) | default、secondary、outline、success、warning、destructive |
 | Segmented | [segmented.tsx](src/components/ui/segmented.tsx) | 分段切换，选中项用主色实心底；选项可传字符串数组或 {value, label} |
 | Table | [table.tsx](src/components/ui/table.tsx) | Table、TableHeader、TableBody、TableRow、TableHead、TableCell，窄屏横向滚动 |
+| Textarea | [textarea.tsx](src/components/ui/textarea.tsx) | 单一形态，样式跟 Input 一致，用于公告正文 |
 | Dialog | [dialog.tsx](src/components/ui/dialog.tsx) | 居中模态，底部操作区可自定义，配套 `DialogClose` |
 | Sheet | [sheet.tsx](src/components/ui/sheet.tsx) | `side="right"` 桌面右侧抽屉，`side="bottom"` 移动端底部抽屉，配套 `SheetClose` |
 
@@ -78,12 +80,16 @@
 | 组件 | 文件 | 说明 |
 | --- | --- | --- |
 | AppShell | [app-shell.tsx](src/components/layout/app-shell.tsx) | 侧边栏、顶栏、移动抽屉。接收 `nav` 数组，按路径最长匹配点亮导航项，抽屉关闭时带 `inert` |
+| VersionLabel | 同上 | 页脚的系统版本号，桌面端在侧边栏底部，移动端在「更多」抽屉末尾 |
+| AnnouncementBanner | [announcement-banner.tsx](src/components/layout/announcement-banner.tsx) | 全站公告条，按级别着色（提示 / 注意 / 重要），可关闭的带关闭按钮 |
+| NotificationBell | [notification-bell.tsx](src/components/layout/notification-bell.tsx) | 顶栏通知铃铛，Kobalte Popover 装的列表，带未读徽标 |
 | PageHeader | [page-header.tsx](src/components/layout/page-header.tsx) | 页面头部：一句说明加右侧操作区。页面名由顶栏显示，这里不再重复放标题 |
 | StatRow | 同上 | 一排指标卡，页面概览用 |
 
 ### 页面内组件
 
-都在 [dashboard/index.tsx](src/routes/dashboard/index.tsx) 里，还没抽成独立文件。
+概览页的几个组件都在 [dashboard/index.tsx](src/routes/dashboard/index.tsx) 里，还没抽成独立文件。
+公告管理页的表单弹窗（新建与编辑共用一个）同理，在 [dashboard/announcements.tsx](src/routes/dashboard/announcements.tsx) 里。
 
 | 组件 | 说明 |
 | --- | --- |
@@ -96,5 +102,7 @@
 | 文件 | 说明 |
 | --- | --- |
 | [src/store/theme.ts](src/store/theme.ts) | 外观偏好，值为 `light`、`dark`、`system`，存 `localStorage` 的 `tokenmp.theme`，落到 `<html class="dark">` |
-| [src/lib/utils.ts](src/lib/utils.ts) | `cn()` 合并类名，`formatNumber()` 与 `formatCurrency()` 格式化数字 |
+| [src/lib/utils.ts](src/lib/utils.ts) | `cn()` 合并类名，`formatNumber()`、`formatCurrency()` 与几个时间格式化 |
+| [src/lib/system.ts](src/lib/system.ts) | 版本、公告、通知的客户端数据层，走 `/api` 下的接口 |
+| [src/lib/resource.ts](src/lib/resource.ts) | `createClientResource()`：只在客户端取数，避开 SSR 下的相对路径 `fetch` |
 | [src/entry-server.tsx](src/entry-server.tsx) | 首屏内联脚本，在 bundle 之前读偏好加 `.dark`，避免闪白 |

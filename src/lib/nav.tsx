@@ -2,6 +2,7 @@ import ClipboardCheck from "lucide-solid/icons/clipboard-check";
 import KeyRound from "lucide-solid/icons/key-round";
 import LayoutDashboard from "lucide-solid/icons/layout-dashboard";
 import Layers from "lucide-solid/icons/layers";
+import Megaphone from "lucide-solid/icons/megaphone";
 import Package from "lucide-solid/icons/package";
 import ReceiptText from "lucide-solid/icons/receipt-text";
 import Route from "lucide-solid/icons/route";
@@ -16,6 +17,8 @@ import type { NavItem } from "~/components/layout/app-shell";
  * 标了 primary 的会出现在移动端底部导航里 —— 底栏最多放五个位置，
  * 除了这四项还要留一个给「更多」，所以只挑最常点的：进来看总览、
  * 管用户、看钱（余额与计费）。剩下的收进「更多」抽屉。
+ *
+ * 这个文件里有 JSX，所以是 .tsx 而不是 .ts —— TypeScript 只在 .tsx 里解析 JSX。
  */
 export const dashboardNav: NavItem[] = [
   {
@@ -49,5 +52,10 @@ export const dashboardNav: NavItem[] = [
     href: "/dashboard/channel-applications",
     label: "渠道申请",
     icon: () => <ClipboardCheck class="size-4" />,
+  },
+  {
+    href: "/dashboard/announcements",
+    label: "公告",
+    icon: () => <Megaphone class="size-4" />,
   },
 ];

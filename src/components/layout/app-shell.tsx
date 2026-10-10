@@ -8,6 +8,10 @@ import Sun from "lucide-solid/icons/sun";
 import X from "lucide-solid/icons/x";
 import { createSignal, For, Show, type JSX } from "solid-js";
 
+import { AnnouncementBanner } from "~/components/layout/announcement-banner";
+import { NotificationBell } from "~/components/layout/notification-bell";
+import { createClientResource } from "~/lib/resource";
+import { fetchSystemVersion, type SystemVersion } from "~/lib/system";
 import { cn } from "~/lib/utils";
 import { resolvedTheme, toggleTheme } from "~/store/theme";
 
@@ -99,19 +103,24 @@ export function AppShell(props: {
         </nav>
         <div class="border-t p-2">
           <ThemeToggle />
+          <VersionLabel class="px-3 pb-0.5 pt-2" />
         </div>
       </aside>
 
       <div class="lg:pl-60">
         <header class="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur lg:px-6">
           <h1 class="truncate text-base font-semibold tracking-tight">{currentTitle()}</h1>
-          <div class="ml-auto shrink-0">
+          <div class="ml-auto flex shrink-0 items-center gap-1">
+            <NotificationBell />
             <UserMenu user={props.user} onLogout={logout} />
           </div>
         </header>
 
         {/* 底部导航固定占掉 64px，给内容留出等高的下边距，否则最后一行会被压住 */}
-        <main class="px-4 py-5 pb-24 lg:px-6 lg:py-6 lg:pb-6">{props.children}</main>
+        <main class="px-4 py-5 pb-24 lg:px-6 lg:py-6 lg:pb-6">
+          <AnnouncementBanner class="mb-4" />
+          {props.children}
+        </main>
       </div>
 
       <BottomNav nav={props.nav} activeHref={activeHref()} />
@@ -177,7 +186,7 @@ function UserMenu(props: { user?: ShellUser | null; onLogout: () => void }) {
 }
 
 /**
- * 移动端底部导航。九项塞不进底栏，所以只放四个最常点的，
+ * 移动端底部导航。十项塞不进底栏，所以只放四个最常点的，
  * 剩下的连同全部入口一起收在「更多」里。
  */
 function BottomNav(props: { nav: NavItem[]; activeHref?: string }) {
@@ -261,10 +270,34 @@ function BottomNav(props: { nav: NavItem[]; activeHref?: string }) {
                 )}
               </For>
             </div>
+
+            {/* 桌面端的版本号在侧边栏底部，手机上侧边栏不出现，这里补一个落脚点 */}
+            <VersionLabel class="border-t px-5 py-3" />
           </KDialog.Content>
         </KDialog.Portal>
       </KDialog>
     </>
+  );
+}
+
+/**
+ * 页脚版本号。版本号对所有人生效，桌面端放侧边栏底部，
+ * 手机上没有侧边栏，放在「更多」抽屉的末尾。取不到就什么都不显示。
+ */
+export function VersionLabel(props: { class?: string }) {
+  const { data } = createClientResource<SystemVersion | null>(() => fetchSystemVersion(), null);
+  const version = () => data()?.version;
+  const channel = () => data()?.channel;
+
+  return (
+    <Show when={version()}>
+      <p class={cn("text-xs text-muted-foreground", props.class)}>
+        v{version()}
+        <Show when={channel()}>
+          <span> · {channel()}</span>
+        </Show>
+      </p>
+    </Show>
   );
 }
 
