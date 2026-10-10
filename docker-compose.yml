@@ -1,0 +1,41 @@
+# 本地开发用的数据库。线上的销售控制台（tokenmp.top）后端是 Go + MySQL，
+# 库表在 mysql 的 sales 库里；这里起一个同构的 MySQL，用途是给 SolidStart 后端
+# 提供存放用户与登录会话的地方，让线上已有的用户拿原密码就能登录。
+#
+# 端口用 3307，避开本机 3306 上那个 tokenmp-demo-mysql 容器。
+# 起停：sudo docker compose up -d / sudo docker compose down
+# 重置：sudo docker compose down -v（会连数据卷一起删）
+
+name: tokenmp-dev
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: tokenmp-dev-mysql
+    restart: unless-stopped
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-tokenmp-dev-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-tokenmp}
+      MYSQL_USER: ${MYSQL_USER:-tokenmp}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-tokenmp-dev}
+    command:
+      # 线上 sales 库是 utf8mb4，这里跟着设，避免导入用户邮箱时出现排序规则冲突
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      # 线上存的是 UTC，这里也按 UTC 走，datetime 字段不会被隐式转换
+      - --default-time-zone=+00:00
+    volumes:
+      - tokenmp-dev-mysql:/var/lib/mysql
+      # 首次启动时会按文件名顺序执行这里的建表脚本
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  tokenmp-dev-mysql:
