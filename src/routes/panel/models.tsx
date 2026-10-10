@@ -8,13 +8,13 @@ import X from "lucide-solid/icons/x";
 import { createMemo, createSignal, For, Show } from "solid-js";
 
 import { PageHeader } from "~/components/layout/page-header";
-import { Section } from "~/components/panel/section";
 import { ResponsiveTable } from "~/components/panel/responsive-table";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { Dialog } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
+import { Select } from "~/components/ui/select";
 import { Sheet, SheetClose } from "~/components/ui/sheet";
 import {
   autoChain as seedChain,
@@ -227,7 +227,11 @@ export default function PanelModels() {
           </>
         }
       >
-        <Section title="当前顺序" caption="排在前面的优先，失败后自动降级到下一个">
+        <div>
+          <p class="text-sm font-semibold">当前顺序</p>
+          <p class="mb-2 mt-0.5 text-xs text-muted-foreground">
+            排在前面的优先，失败后自动降级到下一个
+          </p>
           <Show
             when={chain().length > 0}
             fallback={<p class="text-sm text-muted-foreground">还没有配置，传 auto 会按平台默认顺序路由</p>}
@@ -274,27 +278,23 @@ export default function PanelModels() {
               </For>
             </ol>
           </Show>
-        </Section>
+        </div>
 
-        <Section title="可添加的模型" class="mt-5">
-          <div class="flex flex-wrap gap-1.5">
-            <For each={available()}>
-              {model => (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setChain(prev => [...prev, model])}
-                  aria-label={`添加到降级链：${model}`}
-                >
-                  {model}
-                </Button>
-              )}
-            </For>
-            <Show when={available().length === 0}>
-              <p class="text-sm text-muted-foreground">目录里的模型都已经在链上了</p>
-            </Show>
-          </div>
-        </Section>
+        <div class="mt-5">
+          <Select
+            label="添加模型"
+            placeholder={
+              available().length > 0 ? "选择要加入降级链的模型" : "目录里的模型都已在上面的链上"
+            }
+            options={available().map(model => ({ value: model, label: model }))}
+            // 选了就往链尾追加，选完自动回到 placeholder：这是个「执行动作」的下拉，
+            // 不是「保存选中项」的下拉
+            value={null}
+            onChange={model => setChain(prev => [...prev, model])}
+            disabled={available().length === 0}
+            portal={false}
+          />
+        </div>
       </Dialog>
     </>
   );

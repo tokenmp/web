@@ -13,12 +13,21 @@ import { Card } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { PagerIfNeeded } from "~/components/ui/pager";
 import { Segmented } from "~/components/ui/segmented";
+import { Select } from "~/components/ui/select";
 import { Sheet, SheetClose } from "~/components/ui/sheet";
 import { requestRecords, type RequestRecord } from "~/lib/panel-data";
 import { requestStatusMeta } from "~/lib/panel-labels";
 import { formatDateTime, formatLatency, formatNumber, formatRelativeTime } from "~/lib/utils";
 
 const PAGE_SIZE = 10;
+
+/** 筛选用的模型清单（按出现过的模型去重排序） */
+const MODEL_OPTIONS = [
+  { value: "all", label: "全部模型" },
+  ...[...new Set(requestRecords.map(record => record.model))]
+    .sort()
+    .map(model => ({ value: model, label: model })),
+];
 
 const STATUS_TABS = [
   { value: "all", label: "全部" },
@@ -41,28 +50,32 @@ type StatusFilter = (typeof STATUS_TABS)[number]["value"];
  */
 export default function PanelRequestRecords() {
   const [keyword, setKeyword] = createSignal("");
+  const [model, setModel] = createSignal("all");
   const [status, setStatus] = createSignal<StatusFilter>("all");
   const [page, setPage] = createSignal(1);
+  const [pageSize, setPageSize] = createSignal(PAGE_SIZE);
 
   const filtered = createMemo(() => {
     const query = keyword().trim().toLowerCase();
     return requestRecords.filter(record => {
       const matchStatus = status() === "all" || record.status === status();
+      const matchModel = model() === "all" || record.model === model();
       const matchQuery =
         query === "" ||
         record.model.toLowerCase().includes(query) ||
         record.request_id.toLowerCase().includes(query) ||
         (record.user_agent ?? "").toLowerCase().includes(query);
-      return matchStatus && matchQuery;
+      return matchStatus && matchModel && matchQuery;
     });
   });
 
   const paged = createMemo(() =>
-    filtered().slice((page() - 1) * PAGE_SIZE, page() * PAGE_SIZE),
+    filtered().slice((page() - 1) * pageSize(), page() * pageSize()),
   );
 
   const reset = () => {
     setKeyword("");
+    setModel("all");
     setStatus("all");
     setPage(1);
   };
@@ -96,6 +109,17 @@ export default function PanelRequestRecords() {
               setPage(1);
             }}
             ariaLabel="按状态筛选请求"
+          />
+          <Select
+            label="模型"
+            labelPlacement="inline"
+            class="w-full sm:w-44"
+            options={MODEL_OPTIONS}
+            value={model()}
+            onChange={value => {
+              setModel(value);
+              setPage(1);
+            }}
           />
           <Button variant="outline" onClick={reset} class="lg:ml-auto">
             重置
@@ -169,18 +193,24 @@ export default function PanelRequestRecords() {
               <RecordDetail record={record} />
             </Sheet>
           )}
-          empty={keyword() || status() !== "all" ? "没有匹配的记录" : "暂无请求记录"}
+          empty={keyword() || status() !== "all" || model() !== "all" ? "没有匹配的记录" : "暂无请求记录"}
           emptyDescription={
-            keyword() || status() !== "all" ? "试试调整搜索词或筛选条件" : "还没有产生过 API 调用"
+            keyword() || status() !== "all" || model() !== "all"
+              ? "试试调整搜索词或筛选条件"
+              : "还没有产生过 API 调用"
           }
         />
 
         <div class="px-5">
           <PagerIfNeeded
             page={page()}
-            size={PAGE_SIZE}
+            size={pageSize()}
             total={filtered().length}
             onPageChange={setPage}
+            onSizeChange={value => {
+              setPageSize(value);
+              setPage(1);
+            }}
           />
         </div>
       </Card>

@@ -8,6 +8,7 @@ import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { DecimalSplit } from "~/components/ui/decimal-split";
 import { Dialog } from "~/components/ui/dialog";
+import { Select } from "~/components/ui/select";
 import {
   currentPlan,
   panelNow,
@@ -97,7 +98,7 @@ export default function PanelPlans() {
             </p>
           </div>
 
-          <Button variant="outline" onClick={() => setPending(planViews[1])}>
+          <Button variant="outline" onClick={() => setPending(currentPlan.plan)}>
             更换套餐
           </Button>
         </div>
@@ -272,12 +273,27 @@ export default function PanelPlans() {
             <Button variant="outline" onClick={() => setPending(null)}>
               取消
             </Button>
-            <Button onClick={() => subscribe(pending()!)}>确认订阅</Button>
+            <Button
+              disabled={pending()?.id === currentPlan.plan.id}
+              onClick={() => subscribe(pending()!)}
+            >
+              {pending()?.id === currentPlan.plan.id ? "已是当前套餐" : "确认订阅"}
+            </Button>
           </>
         }
       >
         <Show when={pending()}>
-          <dl class="space-y-2 text-sm">
+          <Select
+            label="目标套餐"
+            options={planViews.map(plan => ({ value: String(plan.id), label: plan.name }))}
+            value={String(pending()!.id)}
+            onChange={id =>
+              setPending(planViews.find(plan => plan.id === Number(id)) ?? null)
+            }
+            portal={false}
+          />
+
+          <dl class="mt-4 space-y-2 text-sm">
             <div class="flex justify-between gap-3">
               <dt class="text-muted-foreground">周期费用</dt>
               <dd class="font-medium tabular-nums">
