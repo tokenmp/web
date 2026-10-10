@@ -22,9 +22,9 @@ const colors = [
   { name: "--border", use: "边框" },
   { name: "--input", use: "输入框描边" },
   { name: "--ring", use: "聚焦环" },
-  { name: "--success", use: "已支付、正向变化" },
-  { name: "--warning", use: "待支付、提醒" },
-  { name: "--destructive", use: "已退款、负向变化" },
+  { name: "--success-text", use: "已支付、正向变化" },
+  { name: "--warning-text", use: "待支付、提醒" },
+  { name: "--destructive-text", use: "已退款、负向变化" },
 ];
 
 const typeScale = [
