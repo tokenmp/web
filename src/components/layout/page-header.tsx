@@ -27,15 +27,18 @@ export function PageHeader(props: {
 /** 顶部的一排指标，页面概览用 */
 export function StatRow(props: { items: { label: string; value: string; hint?: string }[] }) {
   return (
-    <div class="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {/* 用 For 而不是 props.items.map()：items 传的是 stats() 这类取值函数，
-          props 上的字段是懒求值的 getter，每次读都拿回一个新数组，
-          用 .map() 在 JSX 里展开会让同一批元素被反复创建，Solid 那边就报 template is not a function */}
+    // 手机上单列会把四张卡铺满一屏，正文要滚很久才看得到表格，所以直接两列。
+    // 用 For 而不是 props.items.map()：items 传的是 stats() 这类取值函数，
+    // props 上的字段是懒求值的 getter，每次读都拿回一个新数组，
+    // 用 .map() 在 JSX 里展开会让同一批元素被反复创建，Solid 那边就报 template is not a function
+    <div class="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
       <For each={props.items}>
         {item => (
-          <div class="rounded-xl border bg-card p-4 shadow-sm">
-            <p class="text-sm text-muted-foreground">{item.label}</p>
-            <p class="mt-1.5 text-xl font-semibold tabular-nums tracking-tight">{item.value}</p>
+          <div class="rounded-xl border bg-card p-3.5 shadow-sm sm:p-4">
+            <p class="text-xs text-muted-foreground sm:text-sm">{item.label}</p>
+            <p class="mt-1 text-lg font-semibold tabular-nums tracking-tight sm:mt-1.5 sm:text-xl">
+              {item.value}
+            </p>
             <Show when={item.hint}>
               <p class="mt-1 text-xs text-muted-foreground">{item.hint}</p>
             </Show>
