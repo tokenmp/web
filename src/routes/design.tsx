@@ -6,8 +6,10 @@ import { ThemeToggle } from "~/components/layout/app-shell";
 import { Badge } from "~/components/ui/badge";
 import { Button, buttonVariants } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
+import { Dialog, DialogClose } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { Sheet, SheetClose } from "~/components/ui/sheet";
 import { cn } from "~/lib/utils";
 
 const colors = [
@@ -160,6 +162,71 @@ export default function DesignSystem() {
           </Card>
         </Section>
 
+        <Section
+          title="弹层"
+          hint="三种形态共用一套遮罩与关闭行为：焦点陷阱、Esc、点遮罩关闭、背景不滚动。"
+        >
+          <Card class="divide-y">
+            <LayerRow name="Dialog" hint="居中模态，用于确认和短表单">
+              <Dialog
+                trigger="打开弹窗"
+                title="删除这个 API 密钥？"
+                description="删除后使用它的调用会立刻开始失败，这个动作不能撤销。"
+                footer={
+                  <>
+                    <DialogClose>取消</DialogClose>
+                    <DialogClose variant="destructive">删除</DialogClose>
+                  </>
+                }
+              >
+                <p class="text-muted-foreground">
+                  密钥 <code class="font-mono text-xs">sk-live-...a91f</code> 最近一次调用在 3 分钟前。
+                </p>
+              </Dialog>
+            </LayerRow>
+
+            <LayerRow name="Sheet · 右" hint="桌面端的详情与筛选面板">
+              <Sheet
+                side="right"
+                trigger="打开右抽屉"
+                title="订单 SO-20261010-0187"
+                description="专业版月付 · 2026-10-10 14:52"
+                footer={<SheetClose>关闭</SheetClose>}
+              >
+                <dl class="space-y-4">
+                  <Field label="用户" value="lin@example.com" />
+                  <Field label="金额" value="$199.00" />
+                  <Field label="状态" value={<Badge variant="success">已支付</Badge>} />
+                  <Field label="渠道" value="OpenAI" />
+                </dl>
+              </Sheet>
+            </LayerRow>
+
+            <LayerRow name="Sheet · 下" hint="移动端的操作选择，从底部升起">
+              <Sheet
+                side="bottom"
+                trigger="打开底部抽屉"
+                title="选择操作"
+                description="这条订单可以做的事"
+              >
+                <div class="-mx-5 -my-5 divide-y">
+                  <For each={["查看用户详情", "复制订单号", "导出这一条", "申请退款"]}>
+                    {action => (
+                      <SheetClose
+                        variant="ghost"
+                        class="flex w-full items-center justify-between rounded-none px-5 py-4 text-left text-sm font-normal"
+                      >
+                        <span>{action}</span>
+                        <span class="text-muted-foreground">→</span>
+                      </SheetClose>
+                    )}
+                  </For>
+                </div>
+              </Sheet>
+            </LayerRow>
+          </Card>
+        </Section>
+
         <Section title="布局" hint="断点 1024px，宽屏用固定侧边栏，窄屏换成抽屉。">
           <Card class="overflow-x-auto">
             <table class="w-full min-w-[640px] text-sm">
@@ -227,6 +294,27 @@ function Section(props: { title: string; hint: string; children: JSX.Element }) 
       </div>
       {props.children}
     </section>
+  );
+}
+
+function LayerRow(props: { name: string; hint: string; children: JSX.Element }) {
+  return (
+    <div class="flex flex-wrap items-center justify-between gap-3 p-5">
+      <div>
+        <p class="font-medium">{props.name}</p>
+        <p class="text-sm text-muted-foreground">{props.hint}</p>
+      </div>
+      {props.children}
+    </div>
+  );
+}
+
+function Field(props: { label: string; value: JSX.Element }) {
+  return (
+    <div class="flex items-center justify-between gap-4">
+      <dt class="text-muted-foreground">{props.label}</dt>
+      <dd class="font-medium">{props.value}</dd>
+    </div>
   );
 }
 
