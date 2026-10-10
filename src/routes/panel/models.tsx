@@ -17,14 +17,6 @@ import { Dialog } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Sheet, SheetClose } from "~/components/ui/sheet";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "~/components/ui/table";
-import {
   autoChain as seedChain,
   catalogModels,
   catalogUpdatedAt,
@@ -308,13 +300,19 @@ export default function PanelModels() {
   );
 }
 
-/** 一条模型上挂了哪些渠道与账号 */
+/**
+ * 一条模型上挂了哪些渠道与账号。
+ *
+ * 原来渠道下面摆的是四列表格（输入/输出/账号/类型），抽屉放宽到 512px 之后
+ * 依然放不下，账号名与类型都被右边缘切掉 —— 「类型」本来就跟着账号名重复一次。
+ * 改成单价两格 + 账号标签，一眼看得完，也不用横滚。
+ */
 function ChannelDetail(props: { model: CatalogModel }) {
   return (
-    <div class="space-y-5">
+    <div class="space-y-3">
       <For each={props.model.channels}>
         {channel => (
-          <section>
+          <section class="rounded-lg border p-3">
             <div class="flex flex-wrap items-center gap-2">
               <h3 class="text-sm font-medium">{channel.name}</h3>
               <Badge variant="outline">{SOURCE_LABELS[channel.source] ?? channel.source}</Badge>
@@ -322,52 +320,46 @@ function ChannelDetail(props: { model: CatalogModel }) {
                 <Badge variant="secondary">用户分享</Badge>
               </Show>
             </div>
-            <p class="mt-1 break-all font-mono text-xs text-muted-foreground">{channel.base_url}</p>
-            <p class="mt-1 text-xs text-muted-foreground">
-              支持 {channel.supports.join("、")} · {channel.accounts.length} 个账号
-            </p>
 
-            <Table class="mt-2" tableClass="min-w-[420px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>输入</TableHead>
-                  <TableHead>输出</TableHead>
-                  <TableHead>账号</TableHead>
-                  <TableHead>类型</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell class="tabular-nums">
-                    {unitPrice(channel.cost_input_per_million)} 积分/M
-                  </TableCell>
-                  <TableCell class="tabular-nums">
-                    {unitPrice(channel.cost_output_per_million)} 积分/M
-                  </TableCell>
-                  <TableCell class="text-muted-foreground">
-                    {channel.accounts.map(account => account.name).join("、")}
-                  </TableCell>
-                  <TableCell>
-                    <div class="flex flex-wrap gap-1">
-                      <For each={channel.accounts}>
-                        {account => (
-                          <Badge variant={account.owner === "user" ? "outline" : "secondary"}>
-                            {account.owner === "user" ? "用户账号" : "平台账号"}
-                          </Badge>
-                        )}
-                      </For>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
+            <p class="mt-1.5 break-all font-mono text-xs text-muted-foreground">{channel.base_url}</p>
+            <p class="mt-1 text-xs text-muted-foreground">支持 {channel.supports.join("、")}</p>
+
+            <dl class="mt-2.5 grid grid-cols-2 gap-px overflow-hidden rounded-md border bg-border">
+              <div class="bg-card px-3 py-2">
+                <dt class="text-xs text-muted-foreground">输入</dt>
+                <dd class="mt-0.5 text-sm font-medium tabular-nums">
+                  {unitPrice(channel.cost_input_per_million)} 积分/M
+                </dd>
+              </div>
+              <div class="bg-card px-3 py-2">
+                <dt class="text-xs text-muted-foreground">输出</dt>
+                <dd class="mt-0.5 text-sm font-medium tabular-nums">
+                  {unitPrice(channel.cost_output_per_million)} 积分/M
+                </dd>
+              </div>
+            </dl>
+
+            <p class="mt-2.5 text-xs text-muted-foreground">
+              账号（{channel.accounts.length}）
+            </p>
+            <ul class="mt-1.5 flex flex-wrap gap-1.5">
+              <For each={channel.accounts}>
+                {account => (
+                  <li class="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs">
+                    <span class="font-mono">{account.name}</span>
+                    <span class="text-muted-foreground">
+                      {account.owner === "user" ? "用户" : "平台"}
+                    </span>
+                  </li>
+                )}
+              </For>
+            </ul>
           </section>
         )}
       </For>
 
       <p class="text-xs text-muted-foreground">
-        {props.model.channels.length} 个上游 · 按最优路由计价（
-        {props.model.channels.length} 条路由里挑输入价最低的一条）
+        {props.model.channels.length} 个上游 · 按最优路由计价（挑输入价最低的一条）
       </p>
     </div>
   );

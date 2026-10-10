@@ -88,7 +88,7 @@
 | DecimalSplit | [decimal-split.tsx](src/components/ui/decimal-split.tsx) | 大数拆分：整数部分常规、小数部分更小更淡 |
 | Pager | [pager.tsx](src/components/ui/pager.tsx) | 分页条，`PagerIfNeeded` 只在一页放不下时才出现 |
 | Dialog | [dialog.tsx](src/components/ui/dialog.tsx) | 居中模态，底部操作区可自定义，配套 `DialogClose` |
-| Sheet | [sheet.tsx](src/components/ui/sheet.tsx) | `side="right"` 桌面右侧抽屉，`side="bottom"` 移动端底部抽屉，配套 `SheetClose` |
+| Sheet | [sheet.tsx](src/components/ui/sheet.tsx) | `side="right"` 右侧抽屉（手机 92vw、平板 26rem、桌面 32rem），`side="bottom"` 底部抽屉，配套 `SheetClose`；宽度可用 `class` 覆盖 |
 
 ### 布局组件
 
