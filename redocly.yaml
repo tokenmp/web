@@ -1,0 +1,14 @@
+# 校验 openapi.yaml 用的配置。
+# 跑法：with-proxy bunx @redocly/cli lint openapi.yaml
+
+extends:
+  - recommended
+
+rules:
+  # 这份文档同时描述线上和本机两套后端，本机那套就是跑在 localhost，
+  # 这条规则对双服务器的写法不适用。
+  no-server-example.com: off
+
+  # 只读端点本来就只有 200，不必为了满足规则硬造一个 4xx。
+  # 保留为提示而不是错误，方便偶尔回看哪些端点还没写异常分支。
+  operation-4xx-response: warn

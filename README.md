@@ -68,6 +68,27 @@ bun run build     # 产出到 .output
 bun run start     # 运行生产构建
 ```
 
+## 接口文档
+
+[openapi.yaml](openapi.yaml) 描述后端接口，同时盖两套东西：
+
+- **线上**（`https://tokenmp.top`，Go + echo）：管理端 `/admin/*` 与认证 `/auth/*`，另含用户端 `/user/*`。
+  字段名、查询参数、错误码都是从线上源码里逐处对应出来的。
+- **本机**（SolidStart）：只落地了认证那一组。
+
+每个操作带一个 `x-implemented` 标记：`local` 表示本机已实现，`remote` 表示只在线上。
+两边不同步的地方（注册要不要验证码、错误信封长什么样、分页参数叫什么）都写在文档开头的
+说明里，不用对着两份代码找差异。
+
+校验：
+
+```bash
+bunx @redocly/cli lint openapi.yaml
+```
+
+规则配置在 [redocly.yaml](redocly.yaml)，关掉了「服务器地址不能是 localhost」
+（本机后端就是 localhost），并把「每个操作都要写 4xx」降成提示而不是错误。
+
 ## 布局
 
 桌面端用左侧固定侧边栏装下全部导航，顶栏右上角是账户菜单（身份信息、主题切换、退出登录）。
