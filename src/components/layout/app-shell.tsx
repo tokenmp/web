@@ -1,4 +1,5 @@
 import { A, useLocation } from "@solidjs/router";
+import LogOut from "lucide-solid/icons/log-out";
 import Menu from "lucide-solid/icons/menu";
 import Moon from "lucide-solid/icons/moon";
 import Sun from "lucide-solid/icons/sun";
@@ -22,9 +23,17 @@ export function AppShell(props: {
   nav: NavItem[];
   fallbackTitle: string;
   children: JSX.Element;
+  /** 当前登录用户。传了就在侧边栏底部显示头像和退出按钮，没传就只显示主题切换 */
+  user?: { name: string; email?: string | null; role?: string } | null;
 }) {
   const [drawerOpen, setDrawerOpen] = createSignal(false);
   const location = useLocation();
+
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    // 用整页跳转而不是 navigate，顺手把内存里的用户状态也清干净
+    window.location.assign("/");
+  };
 
   // 命中路径最长的导航项才算激活，否则 /dashboard 会把所有子页都点亮
   const activeHref = () => {
@@ -72,15 +81,42 @@ export function AppShell(props: {
     </div>
   );
 
+  // 同样写成函数：这段要在桌面侧边栏和移动抽屉里各出现一次
+  const sidebarFooter = () => (
+    <div class="border-t p-3">
+      <Show when={props.user}>
+        <div class="mb-2 flex items-center gap-2.5 rounded-md px-2 py-1.5">
+          <div class="grid size-7 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground">
+            {props.user!.name.slice(0, 1).toUpperCase()}
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-medium">{props.user!.name}</p>
+            <p class="truncate text-xs text-muted-foreground">
+              {props.user!.email ?? props.user!.role}
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="退出登录"
+            title="退出登录"
+            onClick={logout}
+            class="hit-target grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <LogOut class="size-4" />
+          </button>
+        </div>
+      </Show>
+      <ThemeToggle />
+    </div>
+  );
+
   return (
     <div class="min-h-dvh bg-muted/30">
       {/* 桌面端侧边栏 */}
       <aside class="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r bg-card lg:flex">
         {brand()}
         <div class="flex-1 overflow-y-auto py-2">{navList()}</div>
-        <div class="border-t p-3">
-          <ThemeToggle />
-        </div>
+        {sidebarFooter()}
       </aside>
 
       {/* 移动端抽屉 */}
@@ -110,9 +146,7 @@ export function AppShell(props: {
           </button>
         </div>
         <div class="flex-1 overflow-y-auto py-2">{navList(() => setDrawerOpen(false))}</div>
-        <div class="border-t p-3">
-          <ThemeToggle />
-        </div>
+        {sidebarFooter()}
       </aside>
 
       {/* 主区 */}

@@ -37,6 +37,11 @@ export function DialogClose(props: {
 /**
  * 居中模态弹窗。焦点陷阱、Esc 关闭、遮罩点击关闭、背景滚动锁定都由 Kobalte 的
  * Dialog 原语负责，这里只套设计系统的样式。
+ *
+ * 结构刻意跟 Sheet 保持一致：每个 JSX 类型的 prop 只在一个地方读一次。
+ * props 上的字段是惰性 getter，同一处读两遍（比如在 Show 里判断一次再渲染一次）
+ * 会让同一批 JSX 元素被创建两遍，Solid 只允许一个实例挂到 DOM 上，
+ * 结果就是整页报 template is not a function 并空白。
  */
 export function Dialog(props: DialogProps) {
   return (
@@ -58,18 +63,27 @@ export function Dialog(props: DialogProps) {
             props.class,
           )}
         >
-          <KDialog.Title class="pr-8 text-lg font-semibold leading-none tracking-tight">
-            {props.title}
-          </KDialog.Title>
-          <Show when={props.description}>
-            <KDialog.Description class="mt-2 text-sm text-muted-foreground">
-              {props.description}
-            </KDialog.Description>
-          </Show>
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <KDialog.Title class="font-semibold leading-none tracking-tight">
+                {props.title}
+              </KDialog.Title>
+              <Show when={props.description}>
+                <KDialog.Description class="mt-1.5 text-sm text-muted-foreground">
+                  {props.description}
+                </KDialog.Description>
+              </Show>
+            </div>
 
-          <Show when={props.children}>
-            <div class="mt-4 text-sm">{props.children}</div>
-          </Show>
+            <KDialog.CloseButton
+              aria-label="关闭弹窗"
+              class="hit-target -mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <X class="size-4" />
+            </KDialog.CloseButton>
+          </div>
+
+          <div class="mt-4 text-sm">{props.children}</div>
 
           <div class="mt-6 flex justify-end gap-2">
             {props.footer ?? (
@@ -78,13 +92,6 @@ export function Dialog(props: DialogProps) {
               </KDialog.CloseButton>
             )}
           </div>
-
-          <KDialog.CloseButton
-            aria-label="关闭弹窗"
-            class="hit-target absolute right-4 top-4 grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            <X class="size-4" />
-          </KDialog.CloseButton>
         </KDialog.Content>
       </KDialog.Portal>
     </KDialog>
