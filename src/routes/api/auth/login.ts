@@ -29,10 +29,16 @@ export async function POST({ request }: APIEvent) {
 
   if (!identifier || !password) return errorJson("请填写账号和密码", 400);
 
+  // 线上 Go 那一侧对所有登录入口的邮箱都做 lowercase + trim，这里跟着做。
+  // 库里存的本来就是小写，但用户很可能把首字母打成了大写，
+  // 不做归一到时就会提示「密码不正确」，实际上差的只是大小写。
+  // 用户名（sales 那套登录用的是 name）保持原样比对。
+  const lowered = identifier.toLowerCase();
+
   const [user] = await db
     .select()
     .from(users)
-    .where(or(eq(users.email, identifier), eq(users.name, identifier)))
+    .where(or(eq(users.email, lowered), eq(users.name, identifier)))
     .limit(1);
 
   // 用户不存在和密码错误返回同一句话，避免被拿来枚举账号
