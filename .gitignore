@@ -1,0 +1,10 @@
+.env
+!.env.example
+.vinxi/
+node_modules/
+.output/
+dist/
+.nitro/
+
+# pi harness task output
+.pi/tasks/
