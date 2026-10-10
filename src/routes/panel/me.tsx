@@ -69,7 +69,7 @@ export default function PanelMe() {
                 {user()?.email ?? "未设置邮箱"}
               </p>
               <p class="mt-0.5 text-xs text-muted-foreground">
-                注册于 {formatDate(panelMe.created_at)}
+                注册于 {formatDate(user()?.created_at ?? panelMe.created_at)}
               </p>
             </div>
           </div>

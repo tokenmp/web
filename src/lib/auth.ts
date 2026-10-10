@@ -97,7 +97,12 @@ export function readSessionCookie(request: Request) {
   return null;
 }
 
-/** 对外返回的用户信息，永远不含 password_hash */
+/**
+ * 对外返回的用户信息，永远不含 password_hash。
+ *
+ * created_at 也放出去：个人中心要显示「注册于」，而线上 /auth/me 的
+ * user 对象里本来就有它。
+ */
 export function publicUser(user: UserRow) {
   return {
     id: user.id,
@@ -106,5 +111,6 @@ export function publicUser(user: UserRow) {
     role: user.role,
     status: user.status,
     source: user.source,
+    created_at: user.createdAt,
   };
 }

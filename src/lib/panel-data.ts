@@ -1025,7 +1025,8 @@ export const billingRecords: BillingRecord[] = [
   billingRecord(0, requestRecords[0], { cost: 0.38, markup: 1.1, ledger: "quota" }),
   billingRecord(1, requestRecords[1], { cost: 0.25, markup: 1.1, ledger: "quota" }),
   billingRecord(2, requestRecords[2], { cost: 0.055, markup: 1.1, ledger: "quota" }),
-  billingRecord(3, requestRecords[3], { cost: 0.052, markup: 1.1, ledger: "quota", variance: 0.052 }),
+  // 失败的请求不计费：成本与实付都是 0，详情里也标「未计费」
+  billingRecord(3, requestRecords[3], { cost: 0, markup: 1, ledger: "quota" }),
   billingRecord(4, requestRecords[4], { cost: 0.28, markup: 1.1, ledger: "quota" }),
   billingRecord(5, requestRecords[5], { cost: 0.4, markup: 1.1, ledger: "quota", ownerCredit: 0.048 }),
   billingRecord(6, requestRecords[7], { cost: 0.14, markup: 1.1, ledger: "quota" }),
