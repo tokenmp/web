@@ -68,6 +68,41 @@ bun run build     # 产出到 .output
 bun run start     # 运行生产构建
 ```
 
+## 系统级的版本、公告、通知
+
+三者的分工：
+
+| | 面向 | 存在哪 | 用户能做什么 |
+| --- | --- | --- | --- |
+| 版本 | 所有人 | `system_config.system_version` | 在页脚看到版本号 |
+| 公告 | 全站 | `announcements` | 看到；标了可关闭的能关掉，关过的记在 `announcement_dismissals` |
+| 通知 | 单个用户 | `notifications` | 看到、标已读、点动作按钮 |
+
+字段照着线上 postgres 的 `announcements` / `notifications` / `user_release_reads` 定，
+只把主键从 uuid 换成 bigint 以对齐本地 users 表。线上「v0.1.0 正式发布」本身就是一条公告，
+所以版本说明没另建表 —— 发布说明按公告发就行，不必多一套机制。
+
+建表脚本在 [db/init/02-system.sql](db/init/02-system.sql)。
+
+接口：
+
+| 路径 | 说明 |
+| --- | --- |
+| `GET /api/system/version` | 公开，前端显示版本号 |
+| `GET /api/announcements` | 公开，返回生效中的公告；登录后带 `dismissed` |
+| `POST /api/announcements/{id}/dismiss` | 关掉一条公告 |
+| `GET /api/notifications` | 我的通知，带未读数 |
+| `POST /api/notifications/{id}/read` | 标为已读（幂等） |
+| `POST /api/notifications/read-all` | 全部已读 |
+| `GET/POST /api/admin/announcements` | 管理员：列表（含草稿）、新建（默认草稿） |
+| `GET/PATCH/DELETE /api/admin/announcements/{id}` | 管理员：详情、改、删 |
+| `POST /api/admin/announcements/{id}/publish` 与 `/archive` | 管理员：发布、归档 |
+| `GET/POST /api/admin/notifications` | 管理员：投递记录、发通知（支持批量与幂等键） |
+
+两个设计上的选择：新建公告出来的是**草稿**，发布是单独的动作，免得点一下保存就把公告推给全站；
+发通知带 `idempotency_key` 时按它去重，批量发会在键后接上用户 id，
+否则所有人共用一个键、只有第一个收得到。
+
 ## 接口文档
 
 [openapi.yaml](openapi.yaml) 描述后端接口，同时盖两套东西：

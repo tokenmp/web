@@ -86,6 +86,8 @@ tags:
     description: 网关配置与重载
   - name: Settings
     description: 平台设置、错误规则、共享账号
+  - name: System
+    description: 系统级的版本、公告、通知。本机实现（字段参照线上 postgres 的三张表），线上没有这组端点
   - name: UserPanel
     description: 用户端（https://tokenmp.top 的 /panel），本机未实现
 
@@ -1020,6 +1022,64 @@ components:
         weight_min: { type: number }
         weight_max: { type: number }
         updated_at: { type: string, format: date-time }
+
+    VersionInfo:
+      type: object
+      description: 系统版本号。本机从 system_config 的 system_version 读，线上没有这个端点
+      properties:
+        version: { type: [string, "null"], description: "形如 0.1.0" }
+        released_at: { type: [string, "null"], format: date }
+        channel: { type: [string, "null"], enum: [dev, prod, null], description: 区分环境 }
+
+    Announcement:
+      type: object
+      description: 公告。面向全站，线上「v0.1.0 正式发布」就是用公告发的，版本说明不用另建表
+      properties:
+        id: { type: integer, format: int64 }
+        title: { type: string }
+        body: { type: string }
+        severity: { type: string, enum: [info, warning, urgent] }
+        scope: { type: string, description: 作用范围，目前只有 all }
+        dismissible: { type: boolean, description: 用户能不能自己关掉 }
+        status: { type: string, enum: [draft, published, archived] }
+        sort_order: { type: integer, description: 数字小的排前面 }
+        publish_from: { type: string, format: date-time }
+        publish_until: { type: [string, "null"], format: date-time, description: 为空表示一直有效 }
+        created_by: { type: [integer, "null"], format: int64 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        dismissed:
+          type: boolean
+          description: 仅用户端列表返回，表示当前用户关没关过这条；未登录时恒为 false
+
+    Notification:
+      type: object
+      description: 站内通知，面向单个用户
+      properties:
+        id: { type: integer, format: int64 }
+        user_id: { type: integer, format: int64 }
+        type: { type: string, description: "业务类型，前端拿它挑图标，如 balance_low、key_expiring" }
+        title: { type: string }
+        body: { type: [string, "null"] }
+        severity: { type: string, enum: [info, warning, urgent] }
+        action_label: { type: [string, "null"], description: action_url 的按钮文字 }
+        action_url: { type: [string, "null"] }
+        metadata: { type: [object, "null"], description: 业务侧附带的 JSON }
+        read_at: { type: [string, "null"], format: date-time, description: 为空即未读 }
+        expires_at: { type: [string, "null"], format: date-time }
+        idempotency_key: { type: [string, "null"], description: 幂等键，同一个业务事件重复投递时靠它去重 }
+        created_at: { type: string, format: date-time }
+
+    NotificationPage:
+      description: 通知列表，多带一个未读数，省得前端再请求一次
+      allOf:
+        - $ref: "#/components/schemas/ListEnvelope"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Notification" }
+            unread: { type: integer, description: 未读条数（不受 unread 筛选影响） }
 
   responses:
     BadRequest:
@@ -4192,3 +4252,543 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /api/system/version:
+    get:
+      tags: [System]
+      summary: 系统版本号
+      description: |
+        公开，不需要登录。前端拿它在页脚显示版本号。
+
+        **只有本机有，线上没有这个端点。**
+      operationId: getApiSystemVersion
+      security: []
+      x-implemented: local-only
+      responses:
+        "200":
+          description: 版本信息，没有配置时三个字段都是 null
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionInfo" }
+
+  /api/announcements:
+    get:
+      tags: [System]
+      summary: 当前生效的公告
+      description: |
+        公开。只返回 status=published 且落在 publish_from / publish_until 窗口里的公告，
+        按 sort_order 升序、新的在前。
+
+        登录后每条会带 dismissed，表示当前用户关没关过。未登录时恒为 false。
+
+        **只有本机有，线上没有这个端点。**
+      operationId: getApiAnnouncements
+      security: []
+      x-implemented: local-only
+      responses:
+        "200":
+          description: 公告列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/Announcement" }
+
+  /api/announcements/{id}/dismiss:
+    post:
+      tags: [System]
+      summary: 关掉一条公告
+      description: |
+        记下当前用户关掉了这条公告，换设备也不会再弹。
+        公告标了不可关闭时返回 400。
+
+        **只有本机有，线上没有这个端点。**
+      operationId: postApiAnnouncementsIdDismiss
+      x-implemented: local-only
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 已记下
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400":
+          description: id 不合法，或这条公告不允许关闭
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "401":
+          description: 未登录
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "404":
+          description: 公告不存在
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+
+  /api/notifications:
+    get:
+      tags: [System]
+      summary: 我的通知
+      operationId: getApiNotifications
+      description: |
+        当前用户的通知，新的在前，过期的不返回。
+        查询参数 page、size、unread（unread=1 只看未读）。
+        响应里带 unread 未读总数，前端不用再问一次。
+
+        **只有本机有，线上没有这个端点。**
+      x-implemented: local-only
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: unread
+          in: query
+          schema: { type: string, enum: ["1", "true", "yes"] }
+          description: 只看未读
+      responses:
+        "200":
+          description: 通知列表
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPage" }
+        "401":
+          description: 未登录
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+
+  /api/notifications/{id}/read:
+    post:
+      tags: [System]
+      summary: 把一条通知标为已读
+      description: |
+        幂等，已经读过的再调一次也返回 ok。
+        不属于当前用户的通知返回 404，不区分「不存在」和「不是你的」。
+
+        **只有本机有，线上没有这个端点。**
+      operationId: postApiNotificationsIdRead
+      x-implemented: local-only
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 已读，带回 read_at
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, const: true }
+                  read_at: { type: string, format: date-time }
+        "400":
+          description: id 不合法
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "404":
+          description: 通知不存在或不属于当前用户
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+
+  /api/notifications/read-all:
+    post:
+      tags: [System]
+      summary: 全部标为已读
+      description: |
+        把当前用户所有未读通知标为已读，返回改了多少条。
+        这条路径是静态段，不会被 /api/notifications/{id} 抢走。
+
+        **只有本机有，线上没有这个端点。**
+      operationId: postApiNotificationsReadAll
+      x-implemented: local-only
+      responses:
+        "200":
+          description: 已读
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, const: true }
+                  updated: { type: integer, description: 本次改动的条数 }
+        "401":
+          description: 未登录
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+
+  /api/admin/announcements:
+    get:
+      tags: [System]
+      summary: 公告列表（含草稿与已归档）
+      description: |
+        管理端要能看见全部，所以不加 status 过滤时草稿也在。
+        查询参数 page、size、status。
+
+        **只有本机有，线上没有这个端点。**
+      operationId: getApiAdminAnnouncements
+      x-implemented: local-only
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: status
+          in: query
+          schema: { type: string, enum: [draft, published, archived] }
+      responses:
+        "200":
+          description: 公告列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/Announcement" }
+        "403":
+          description: 不是管理员
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+    post:
+      tags: [System]
+      summary: 新建公告
+      description: |
+        建出来的是草稿，发布是单独的动作，免得点一下保存就把公告推给全站。
+
+        **只有本机有，线上没有这个端点。**
+      operationId: postApiAdminAnnouncements
+      x-implemented: local-only
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, body]
+              properties:
+                title: { type: string, maxLength: 255 }
+                body: { type: string }
+                severity: { type: string, enum: [info, warning, urgent], default: info }
+                scope: { type: string, default: all }
+                dismissible: { type: boolean, default: true }
+                sort_order: { type: integer, default: 0 }
+                publish_from: { type: string, format: date-time, description: 不填即当前时间 }
+                publish_until: { type: [string, "null"], format: date-time }
+      responses:
+        "201":
+          description: 建好了（草稿）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Announcement" }
+        "400":
+          description: 参数不合法
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "403":
+          description: 不是管理员
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+
+  /api/admin/announcements/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [System]
+      summary: 公告详情
+      operationId: getApiAdminAnnouncementsId
+      x-implemented: local-only
+      responses:
+        "200":
+          description: 公告
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Announcement" }
+        "400":
+          description: id 不合法
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "403":
+          description: 不是管理员
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "404":
+          description: 公告不存在
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+    patch:
+      tags: [System]
+      summary: 改公告
+      description: 只改传进来的字段，没传的不动
+      operationId: patchApiAdminAnnouncementsId
+      x-implemented: local-only
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: 与新建同样的字段，全部可选
+              properties:
+                title: { type: string, maxLength: 255 }
+                body: { type: string }
+                severity: { type: string, enum: [info, warning, urgent] }
+                status: { type: string, enum: [draft, published, archived] }
+                scope: { type: string }
+                dismissible: { type: boolean }
+                sort_order: { type: integer }
+                publish_from: { type: string, format: date-time }
+                publish_until: { type: [string, "null"], format: date-time }
+      responses:
+        "200":
+          description: 改后的公告
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Announcement" }
+        "400":
+          description: 参数不合法
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "403":
+          description: 不是管理员
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "404":
+          description: 公告不存在
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+    delete:
+      tags: [System]
+      summary: 删公告
+      description: 连带删掉用户的关闭记录（外键级联）
+      operationId: deleteApiAdminAnnouncementsId
+      x-implemented: local-only
+      responses:
+        "200":
+          description: 已删
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400":
+          description: id 不合法
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "403":
+          description: 不是管理员
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "404":
+          description: 公告不存在
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+
+  /api/admin/announcements/{id}/publish:
+    post:
+      tags: [System]
+      summary: 发布公告
+      description: |
+        已经发布过的再调返回 409，免得重复点把生效时间又刷成当下。
+        归档过的重新发布会把生效时间挪到当下，否则会被旧时间窗挡住。
+
+        **只有本机有，线上没有这个端点。**
+      operationId: postApiAdminAnnouncementsIdPublish
+      x-implemented: local-only
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 发布后的公告
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Announcement" }
+        "400":
+          description: id 不合法
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "403":
+          description: 不是管理员
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "404":
+          description: 公告不存在
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "409":
+          description: 已经发布过了
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+
+  /api/admin/announcements/{id}/archive:
+    post:
+      tags: [System]
+      summary: 归档公告
+      description: |
+        下架。归档后不再出现在用户端的生效列表里，记录保留，随时能再发布。
+
+        **只有本机有，线上没有这个端点。**
+      operationId: postApiAdminAnnouncementsIdArchive
+      x-implemented: local-only
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 归档后的公告
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Announcement" }
+        "400":
+          description: id 不合法
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "403":
+          description: 不是管理员
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "404":
+          description: 公告不存在
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "409":
+          description: 已经归档了
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+
+  /api/admin/notifications:
+    get:
+      tags: [System]
+      summary: 通知投递记录
+      description: |
+        查询参数 page、size、user_id、type。
+
+        **只有本机有，线上没有这个端点。**
+      operationId: getApiAdminNotifications
+      x-implemented: local-only
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: user_id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: type
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: 投递记录
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/Notification" }
+        "403":
+          description: 不是管理员
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+    post:
+      tags: [System]
+      summary: 发通知
+      description: |
+        给一个或多个用户发。`user_id` 发单个，`user_ids` 发批量，两者至少给一个。
+
+        带 `idempotency_key` 时按它去重：同一个业务事件重复投递只落一条
+        （「余额不足」这种每天都会触发的事件靠它避免刷屏）。批量发时服务端会在键后面
+        接上用户 id，否则所有人共用一个键、只有第一个收得到。
+
+        **只有本机有，线上没有这个端点。**
+      operationId: postApiAdminNotifications
+      x-implemented: local-only
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                user_id: { type: integer, format: int64 }
+                user_ids: { type: array, items: { type: integer, format: int64 } }
+                type: { type: string, maxLength: 64 }
+                title: { type: string, maxLength: 255 }
+                body: { type: [string, "null"] }
+                severity: { type: string, enum: [info, warning, urgent], default: info }
+                action_label: { type: string, maxLength: 128 }
+                action_url: { type: string, maxLength: 512 }
+                metadata: { type: [object, "null"] }
+                expires_at: { type: [string, "null"], format: date-time }
+                idempotency_key: { type: string, maxLength: 120 }
+      responses:
+        "201":
+          description: 已投递
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, const: true }
+                  created: { type: integer, description: 目标用户数 }
+        "400":
+          description: 参数不合法，或没给 user_id / user_ids
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "403":
+          description: 不是管理员
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "404":
+          description: 有用户在库里找不到，响应里会列出是哪几个
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
