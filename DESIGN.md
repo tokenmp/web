@@ -59,7 +59,7 @@
 
 ### 基础组件
 
-放在 `src/components/ui/`，写法沿用 shadcn/ui：`class-variance-authority` 管变体，`tailwind-merge` 合并外部传入的 `class`。
+放在 `src/components/ui/`，写法沿用 shadcn/ui：`class-variance-authority` 管变体，`tailwind-merge` 合并外部传入的 `class`。遮罩层的焦点陷阱、Esc 关闭、点遮罩关闭、背景滚动锁定交给 `@kobalte/core` 的 Dialog 原语，这里只套样式。
 
 | 组件 | 文件 | 变体 |
 | --- | --- | --- |
@@ -68,6 +68,8 @@
 | Input | [input.tsx](src/components/ui/input.tsx) | 单一形态，移动端 16px 高 40px，桌面 14px 高 36px |
 | Label | [label.tsx](src/components/ui/label.tsx) | 单一形态 |
 | Badge | [badge.tsx](src/components/ui/badge.tsx) | default、secondary、outline、success、warning、destructive |
+| Dialog | [dialog.tsx](src/components/ui/dialog.tsx) | 居中模态，底部操作区可自定义，配套 `DialogClose` |
+| Sheet | [sheet.tsx](src/components/ui/sheet.tsx) | `side="right"` 桌面右侧抽屉，`side="bottom"` 移动端底部抽屉，配套 `SheetClose` |
 
 ### 布局组件
 
