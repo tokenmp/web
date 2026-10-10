@@ -1,0 +1,4194 @@
+openapi: 3.1.0
+
+info:
+  title: TokenMP API
+  version: 0.1.0
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+  summary: TokenMP 销售控制台的后端接口
+  description: |
+    这份文档描述两套东西：
+
+    1. **线上后端**（Go + echo + MySQL），部署在 `https://tokenmp.top`。它是接口的权威定义，
+       路径与字段都取自线上源码，不是推测。
+    2. **本机实现**（SolidStart），只落地了认证那一组，跑在 `http://localhost:6789`。
+       本地实现与线上有两处有意的不一致，见下面「两处差异」。
+
+    ## 约定的响应形状
+
+    成功、单对象、列表、错误各有固定信封（见 `internal/httpx/httpx.go`）：
+
+    ```json
+    {"ok": true}
+    {"ok": true, "data": { ... }}
+    {"ok": true, "items": [ ... ], "total": 128 }
+    {"error": {"code": "invalid_credentials", "message": "账号或密码不正确"}}
+    ```
+
+    注意列表是把 `items` 和 `total` 放在**顶层**，不套在 `data` 里。
+
+    ## 鉴权
+
+    线上有四套，看路径前缀：
+
+    | 前缀 | 鉴权方式 |
+    | --- | --- |
+    | `/auth/*` | 公开；`/auth/me` 与 `/auth/password` 需要用户会话 |
+    | `/admin/*` | 管理员令牌 `X-Admin-Token`，或管理员会话 JWT，二选一 |
+    | `/user/*` | 用户会话 JWT，或 `sk-` 开头的 API key，二选一 |
+    | `/v1/*` | 用户的 API key，走 OpenAI 兼容协议 |
+
+    会话 JWT 由 `/auth/login`、`/auth/register` 签发，HS256，claims 为
+    `sub`（用户 id 的十进制字符串）、`email`、`v`（token_version）、`iss`、`iat`、`exp`，有效期 168 小时。
+    改密码会把 `users.token_version` 加一，旧 token 随即失效。
+
+    ## 两处差异
+
+    本机实现是照线上抄的，但有两处故意不同，写在这里免得对不上：
+
+    - **错误信封**：线上是 `{"error":{"code","message"}}`，本机是 `{"error":"一句话"}`（省掉了 code）。
+    - **列表分页**：线上分页参数是 `page` 与 `page_size`，响应是 `{ok, items, total}`。
+
+    标注说明：本机已实现的端点带 `x-implemented: local`，只存在于线上的标 `x-implemented: remote`。
+
+servers:
+  - url: https://tokenmp.top
+    description: 线上后端（Go + echo），接口定义以它为准
+  - url: http://localhost:6789
+    description: 本机 SolidStart 后端，目前只有认证那一组
+
+# 默认要鉴权。公开端点（/auth/login、/healthz 等）各自写了 security: [] 覆盖掉。
+security:
+  - bearerSession: []
+  - adminToken: []
+
+tags:
+  - name: Auth
+    description: 注册、登录、会话。本机已实现
+  - name: Users
+    description: 后台的用户管理
+  - name: Balances
+    description: 余额调整与调整记录
+  - name: Plans
+    description: 套餐、套餐价格、订阅激活记录
+  - name: Models
+    description: 模型目录与分成比例
+  - name: Channels
+    description: 渠道分组与渠道账号
+  - name: ChannelApplications
+    description: 渠道开通申请的审核
+  - name: Billing
+    description: 计费记录、调用记录、对账
+  - name: Dashboard
+    description: 概览页的汇总与趋势
+  - name: Gateway
+    description: 网关配置与重载
+  - name: Settings
+    description: 平台设置、错误规则、共享账号
+  - name: UserPanel
+    description: 用户端（https://tokenmp.top 的 /panel），本机未实现
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: tokenmp_session
+      description: 本机实现的会话 cookie。线上用的是 Authorization 头，见 bearerSession
+    bearerSession:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "线上 `/auth/login` 返回的 token，放 `Authorization: Bearer <token>`"
+    adminToken:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: |
+        管理员令牌，放 `Authorization: Bearer <admin_token>`。
+        `/admin/*` 下静态令牌与管理员会话 JWT 走同一个头：命中令牌就直接放行，
+        否则当会话 JWT 解析并要求 `role=admin`。两者都不行返回 401 `invalid_admin_token`。
+        线上 `auth.admin_token` 为空时这个检查直接放行。
+    apiKey:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: "`sk-` 开头的用户 API key，`/user/*` 与 `/v1/*` 用它。"
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+      description: 页码
+    PageSize:
+      name: size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      description: 每页条数，上限 100。注意参数名是 size，不是 page_size
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+      description: 资源主键
+
+  schemas:
+    OkEnvelope:
+      type: object
+      description: 成功但没有数据要回
+      required: [ok]
+      properties:
+        ok: { type: boolean, const: true }
+
+    DataEnvelope:
+      type: object
+      description: 成功，回一个对象
+      required: [ok, data]
+      properties:
+        ok: { type: boolean, const: true }
+        data: {}
+
+    ListEnvelope:
+      type: object
+      description: 成功，回一页列表。注意 items 与 total 在顶层，不套 data
+      required: [ok, items, total]
+      properties:
+        ok: { type: boolean, const: true }
+        items:
+          type: array
+          items: {}
+        total:
+          type: integer
+          format: int64
+          description: 符合条件的总条数，不是本页条数
+
+    ErrorEnvelope:
+      type: object
+      description: 错误。线上用这个形状
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: |
+                业务错误码。这份枚举是把线上各 handler 里用到的字面量汇总起来的，
+                以源码为准。
+              enum:
+                - bad_request
+                - invalid_request
+                - invalid_value
+                - unsupported_param
+                - unauthorized
+                - invalid_credentials
+                - invalid_code
+                - code_expired
+                - email_taken
+                - account_disabled
+                - invalid_admin_token
+                - invalid_api_key
+                - key_expired
+                - forbidden
+                - not_found
+                - conflict
+                - duplicate_name
+                - duplicate_price
+                - duplicate_account
+                - already_reviewed
+                - already_approved
+                - rate_limited
+                - no_account
+                - invalid_days
+                - insufficient_balance
+                - upstream_error
+                - ref_source_error
+                - bad_report
+                - gateway_sync_failed
+                - gateway_unreachable
+                - gateway_unavailable
+                - gateway_rules_disabled
+                - gateway_bad_response
+                - internal
+            message: { type: string, description: 给人看的中文说明 }
+      example:
+        error: { code: invalid_credentials, message: 账号或密码不正确 }
+
+    LocalErrorEnvelope:
+      type: object
+      description: 本机实现的错误形状，只有一句话，没有 code
+      required: [error]
+      properties:
+        error: { type: string }
+      example:
+        error: 账号或密码不正确
+
+    Session:
+      type: object
+      description: 登录成功后签发的东西
+      required: [token, user]
+      properties:
+        token:
+          type: string
+          description: JWT。本机会同时写进 tokenmp_session cookie，线上只返回 token
+        user:
+          $ref: "#/components/schemas/User"
+
+    User:
+      type: object
+      description: 用户。本机这张表由线上两套用户表合并而来，多一个 source 字段
+      required: [id, name]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, description: 登录名，注册时由邮箱 @ 前面那段生成 }
+        email: { type: [string, "null"], format: email }
+        role: { type: string, enum: [user, admin], default: user }
+        status:
+          type: integer
+          description: "1 正常，0 停用。线上是 tinyint"
+          enum: [0, 1]
+        credit_limit:
+          type: number
+          description: 信用额度，线上是 decimal(14,8)
+        plan_id: { type: [integer, "null"], format: int64 }
+        token_version:
+          type: integer
+          format: int64
+          description: 改密码时自增，用来让旧 token 失效
+        source:
+          type: string
+          description: 本机独有，标记这条用户是从哪套线上表导入的
+          enum: [local, sales, tokenmp_next]
+        created_at: { type: [string, "null"], format: date-time }
+        updated_at: { type: [string, "null"], format: date-time }
+
+    UserBudget:
+      type: object
+      description: 用户的预算封顶。enabled=false 或 amount=0 表示还没设
+      properties:
+        user_id: { type: integer, format: int64 }
+        amount: { type: number }
+        period: { type: string, enum: [day, week, month] }
+        period_start: { type: [string, "null"], format: date-time }
+        period_end: { type: [string, "null"], format: date-time }
+        used: { type: number, description: 本周期已用掉的量 }
+        version: { type: integer, format: int64 }
+        updated_at: { type: string, format: date-time }
+
+    Subscription:
+      type: object
+      description: 当前订阅的额度快照，只在用户有生效套餐时出现
+      properties:
+        plan_id: { type: integer, format: int64 }
+        quota_kind: { type: string, enum: [money, requests] }
+        quota_limit: { type: number }
+        quota_used: { type: number }
+        period_start: { type: [string, "null"], format: date-time }
+        period_end: { type: [string, "null"], format: date-time }
+
+    UserView:
+      description: 管理端看的用户，比 User 多余额、预算和订阅快照
+      allOf:
+        - $ref: "#/components/schemas/User"
+        - type: object
+          properties:
+            balance: { type: number, description: 可用余额，恒存在 }
+            budget: { $ref: "#/components/schemas/UserBudget" }
+            subscription: { $ref: "#/components/schemas/Subscription" }
+
+    APIKey:
+      type: object
+      description: |
+        用户 API 密钥。明文只在创建那一次返回，之后只能看到前缀和后缀。
+        `key_hash` 的 JSON tag 是 `-`，任何响应都不会带上。
+      properties:
+        id: { type: integer, format: int64 }
+        user_id: { type: integer, format: int64 }
+        name: { type: [string, "null"] }
+        key_prefix: { type: string, description: "明文前 9 个字符，形如 sk-abc123" }
+        key_suffix: { type: [string, "null"], description: 明文末 6 位 }
+        status: { type: integer }
+        model_whitelist: { type: [array, "null"], items: { type: string } }
+        rate_limit_per_min: { type: [integer, "null"] }
+        expires_at: { type: [string, "null"], format: date-time }
+        last_used_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    TokenCounts:
+      type: object
+      description: 五个 token 计数，多个模型里共用
+      properties:
+        prompt_tokens: { type: integer, format: int64 }
+        completion_tokens: { type: integer, format: int64 }
+        cache_read_tokens: { type: integer, format: int64 }
+        cache_write_tokens: { type: integer, format: int64 }
+        total_tokens: { type: integer, format: int64 }
+
+    BillingRecord:
+      description: 计费流水
+      allOf:
+        - $ref: "#/components/schemas/TokenCounts"
+        - type: object
+          properties:
+            id: { type: integer, format: int64 }
+            request_id: { type: string }
+            user_id: { type: integer, format: int64 }
+            api_key_id: { type: integer, format: int64 }
+            plan_id: { type: integer, format: int64 }
+            channel_id: { type: integer, format: int64 }
+            channel_name: { type: string }
+            owner_user_id: { type: integer, format: int64 }
+            entry: { type: string }
+            model: { type: string }
+            stream: { type: boolean }
+            usage_source: { type: string }
+            charge_mode: { type: string }
+            cost_multiplier: { type: number }
+            cost_multiplier_rules: { type: [array, "null"], items: {} }
+            cost_amount: { type: number }
+            revenue_multiplier: { type: number }
+            revenue_multiplier_rules: { type: [array, "null"], items: {} }
+            revenue_amount: { type: number }
+            owner_credit_amount: { type: number, description: 分享给上游账号属主的额度 }
+            currency: { type: string }
+            billing_mode: { type: string }
+            ledger: { type: string }
+            latency_ms: { type: [integer, "null"] }
+            http_status: { type: [integer, "null"] }
+            attempts: { type: [integer, "null"] }
+            retried: { type: [boolean, "null"] }
+            status: { type: string }
+            created_at: { type: string, format: date-time }
+
+    RequestRecord:
+      description: 一次调用的记录（含失败）
+      allOf:
+        - $ref: "#/components/schemas/TokenCounts"
+        - type: object
+          properties:
+            request_id: { type: string }
+            user_id: { type: integer, format: int64 }
+            api_key_id: { type: integer, format: int64 }
+            model: { type: string }
+            served_model: { type: [string, "null"] }
+            entry: { type: string }
+            stream: { type: boolean }
+            channel: { type: string }
+            channel_type: { type: string }
+            base_url: { type: [string, "null"] }
+            status: { type: string, enum: [in_progress, success, error] }
+            http_status: { type: [integer, "null"] }
+            error_message: { type: [string, "null"] }
+            error_code: { type: [string, "null"] }
+            render_status: { type: [integer, "null"] }
+            upstream_code: { type: [string, "null"] }
+            upstream_message: { type: [string, "null"] }
+            panel_message: { type: [string, "null"] }
+            attempts: { type: [integer, "null"] }
+            retried: { type: [boolean, "null"] }
+            user_agent: { type: [string, "null"] }
+            reasoning_effort: { type: [string, "null"] }
+            latency_ms: { type: [integer, "null"] }
+            ttfb_ms: { type: [integer, "null"] }
+            tps: { type: [number, "null"] }
+            started_at: { type: [string, "null"], format: date-time }
+            finished_at: { type: [string, "null"], format: date-time }
+            created_at: { type: string, format: date-time }
+
+    RequestBinding:
+      type: object
+      description: 请求与计费的绑定关系，对账用
+      properties:
+        request_id: { type: string }
+        user_id: { type: integer, format: int64 }
+        api_key_id: { type: integer, format: int64 }
+        plan_id: { type: [integer, "null"], format: int64 }
+        model: { type: string }
+        entry: { type: string }
+        stream: { type: boolean }
+        user_agent: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+        settled_at: { type: [string, "null"], format: date-time }
+
+    AdjustLogItem:
+      type: object
+      description: 一次手工调账的记录
+      properties:
+        id: { type: integer, format: int64 }
+        user_id: { type: integer, format: int64 }
+        user_name: { type: string }
+        delta: { type: number, description: 正数入账，负数扣款 }
+        balance_after: { type: number }
+        ref_id: { type: string }
+        reason: { type: string }
+        operator: { type: string, description: 操作人（管理员） }
+        created_at: { type: string, format: date-time }
+
+    RateRule:
+      type: object
+      description: 按时段与模型的倍率规则
+      properties:
+        name: { type: string }
+        model: { type: string, description: 不填则对组内全部模型生效 }
+        timezone: { type: string }
+        days_of_week: { type: array, items: { type: integer } }
+        start_time: { type: string, description: "形如 09:00" }
+        end_time: { type: string }
+        multiplier: { type: number }
+        compose_mode: { type: string }
+        priority: { type: integer }
+        effective_from: { type: string }
+        effective_until: { type: string }
+
+    ModelConfig:
+      type: object
+      description: 单个模型的上下文与推理配置
+      properties:
+        context_window: { type: integer }
+        max_tokens: { type: integer }
+        reasoning_effort: { type: string }
+
+    CostTier:
+      type: object
+      description: 阶梯价的一档
+      properties:
+        up_to_input_tokens: { type: integer }
+        input_per_million: { type: number }
+        output_per_million: { type: number }
+        cache_read_per_million: { type: number }
+        cache_write_per_million: { type: number }
+
+    ModelCost:
+      type: object
+      description: 一个模型的单价，单位是每百万 token
+      properties:
+        input_per_million: { type: number }
+        output_per_million: { type: number }
+        cache_read_per_million: { type: number }
+        cache_write_per_million: { type: number }
+        per_request: { type: number, description: 按次计费时用 }
+        tiers: { type: array, items: { $ref: "#/components/schemas/CostTier" } }
+
+    CostBlock:
+      type: object
+      description: 渠道组与申请里的成本配置。前六个字段是拍平在对象上的
+      properties:
+        cost_mode: { type: string }
+        cost_input_per_million: { type: number }
+        cost_output_per_million: { type: number }
+        cost_cache_read_per_million: { type: number }
+        cost_cache_write_per_million: { type: number }
+        cost_per_request: { type: number }
+        cost_tiers: { type: array, items: { $ref: "#/components/schemas/CostTier" } }
+        cost_models:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/ModelCost" }
+        model_configs:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/ModelConfig" }
+        rate_rules: { type: array, items: { $ref: "#/components/schemas/RateRule" } }
+
+    PlanCore:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        mode: { type: string, enum: [pay_as_you_go, subscription] }
+        pricing_mode: { type: string, enum: [markup, table] }
+        markup_multiplier: { type: number }
+        rate_rules: { type: array, items: { $ref: "#/components/schemas/RateRule" } }
+        quota_kind: { type: string, enum: [money, requests] }
+        quota_amount: { type: number }
+        quota_period_days: { type: integer }
+        overage_mode: { type: string, enum: [disabled, bill] }
+        price: { type: number }
+        currency: { type: string }
+        status: { type: integer, description: 0 表示已删 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    PlanPrice:
+      type: object
+      description: 套餐里针对某个模型的定价
+      properties:
+        id: { type: integer, format: int64 }
+        plan_id: { type: integer, format: int64 }
+        model: { type: string }
+        cost_mode: { type: string, enum: [token, request] }
+        input_per_million: { type: number }
+        output_per_million: { type: number }
+        cache_read_per_million: { type: number }
+        cache_write_per_million: { type: number }
+        per_request: { type: number }
+        request_weight: { type: number }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ChannelGroup:
+      description: 渠道分组。上游密钥是 `json:"-"`，任何响应都不回显
+      allOf:
+        - $ref: "#/components/schemas/CostBlock"
+        - type: object
+          properties:
+            id: { type: integer, format: int64 }
+            name: { type: string }
+            type: { type: string, enum: [openai, anthropic] }
+            base_url: { type: string }
+            models: { type: array, items: { type: string } }
+            upstream_models:
+              type: object
+              additionalProperties: { type: string }
+            supports: { type: array, items: { type: string } }
+            share_policy: { type: string, enum: [platform, public] }
+            share_rate: { type: number }
+            owner_user_id: { type: integer, format: int64, description: 空表示平台自营 }
+            allow_user_accounts: { type: boolean }
+            key_guide_url: { type: string }
+            official: { type: boolean }
+            disabled: { type: integer }
+            source: { type: string, enum: [official, user, platform] }
+            synced: { type: integer }
+            last_sync_at: { type: string, format: date-time }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    ChannelAccount:
+      type: object
+      description: 组下的一个上游账号。`api_key_enc` 是 `json:"-"`，不回显
+      properties:
+        id: { type: integer, format: int64 }
+        group_id: { type: integer, format: int64 }
+        name: { type: string }
+        channel_name: { type: string, description: "形如 {组名}__{账号名}" }
+        weight: { type: number }
+        cost_multiplier: { type: number }
+        owner_user_id: { type: integer, format: int64 }
+        share_rate: { type: number }
+        public: { type: boolean }
+        share_state: { type: string, enum: [private, pending, public] }
+        probe_models: { type: string, description: 逗号分隔 }
+        probe_at: { type: [string, "null"], format: date-time }
+        disabled: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ChannelApplication:
+      description: 客户提交的渠道开通申请。`api_key_enc` 不回显
+      allOf:
+        - $ref: "#/components/schemas/CostBlock"
+        - type: object
+          properties:
+            id: { type: integer, format: int64 }
+            applicant_user_id: { type: integer, format: int64 }
+            applicant_name: { type: string, description: 仅管理端列表返回 }
+            name: { type: string }
+            type: { type: string, enum: [openai, anthropic] }
+            base_url: { type: string }
+            models: { type: array, items: { type: string } }
+            upstream_models:
+              type: object
+              additionalProperties: { type: string }
+            supports: { type: array, items: { type: string } }
+            share_rate: { type: number }
+            status: { type: string, enum: [pending, approved, rejected] }
+            admin_note: { type: string }
+            reviewed_at: { type: string, format: date-time }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    ModelShareRate:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        model: { type: string }
+        share_rate: { type: number }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ErrorRule:
+      type: object
+      description: 错误处理规则，由网关执行
+      properties:
+        id: { type: integer, description: 只读，由网关分配 }
+        enabled: { type: boolean }
+        name: { type: string }
+        when:
+          type: object
+          description: 命中条件，各字段都是可选的
+          properties:
+            kind:
+              type: string
+              enum: [transport, auth_rejected, upstream_status, invalid_request, client_gone]
+            status: { type: integer }
+            code: { type: string }
+            upstream_code: { type: string }
+            upstream_code_prefix: { type: string }
+            message_regex: { type: string }
+            channel_type: { type: string, enum: [openai, anthropic] }
+            model: { type: string }
+            channels: { type: array, items: { type: string } }
+            accounts: { type: array, items: { type: string } }
+        return:
+          type: object
+          description: 命中后改写成什么
+          properties:
+            status: { type: integer }
+            code: { type: string }
+            message: { type: string }
+            panel_message: { type: string }
+            include_request_id: { type: boolean }
+
+    AdminModelView:
+      type: object
+      properties:
+        model: { type: string }
+        channels: { type: [array, "null"], items: { type: string } }
+        config: { $ref: "#/components/schemas/ModelConfig" }
+
+    PlatformSettings:
+      type: object
+      properties:
+        share_default_rate: { type: number }
+        share_source: { type: string, enum: [database, config_default] }
+        currency: { type: string }
+        balance_check: { type: boolean }
+        default_plan_name: { type: string }
+        ratelimit_per_min: { type: integer }
+        request_record:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            sample_rate: { type: number }
+            retention_days: { type: integer }
+        smtp_enabled: { type: boolean }
+
+    GatewayBalancer:
+      type: object
+      description: |
+        负载均衡配置。这份结构是网关服务与前端约定的，sale 仓库里没有对应定义，
+        所以字段以实际返回为准。
+      properties:
+        strategy: { type: string, enum: [weighted_random, softmax] }
+        softmax:
+          type: object
+          properties:
+            temperature: { type: number }
+            metric: { type: string, enum: [weight, latency, speed, error_rate, cost] }
+            metric_weights: { type: object }
+            latency_reference_ms: { type: number }
+            speed_reference_tps: { type: number }
+        degradation:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            error_rate_threshold: { type: number }
+            latency_ms_threshold: { type: number }
+            weight_penalty: { type: number }
+            window: { type: integer }
+
+    GatewayStaticParams:
+      type: object
+      description: 网关的静态参数，时长统一写成 300s 这样的字符串
+      properties:
+        timeout:
+          type: object
+          properties:
+            non_stream_overall: { type: string }
+            stream_first_byte: { type: string }
+            stream_idle: { type: string }
+        retry:
+          type: object
+          properties:
+            channel_retries: { type: integer }
+            cross_channel_retries: { type: integer }
+            max_total_attempts: { type: integer }
+        health_check:
+          type: object
+          properties:
+            failure_threshold: { type: integer }
+            failure_window: { type: string }
+            cooldown_ttl: { type: string }
+            cooldown_max: { type: string }
+        sticky:
+          type: object
+          properties:
+            enabled: { type: boolean }
+
+    ShareAccountRow:
+      type: object
+      description: 审核列表里的一行，比 ChannelAccount 多属主与额度
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        channel_name: { type: string }
+        group_id: { type: integer, format: int64 }
+        group_name: { type: string }
+        owner_user_id: { type: integer, format: int64 }
+        owner_name: { type: string }
+        share_rate: { type: [number, "null"] }
+        public: { type: boolean }
+        share_state: { type: string, enum: [private, pending, public] }
+        weight: { type: number }
+        disabled: { type: integer }
+        total_credit: { type: number }
+        recent_credit: { type: number }
+        created_at: { type: string, format: date-time }
+
+    PlanActivationRow:
+      type: object
+      description: 按用户聚合的套餐激活情况
+      properties:
+        user_id: { type: integer, format: int64 }
+        user_name: { type: string }
+        plan_id: { type: integer, format: int64 }
+        plan_name: { type: string }
+        plan_mode: { type: string }
+        quota_kind: { type: string }
+        quota_limit: { type: number }
+        quota_used: { type: number }
+        period_start: { type: [string, "null"], format: date-time }
+        period_end: { type: [string, "null"], format: date-time }
+        total_spend: { type: number }
+        activation_count: { type: integer }
+        first_at: { type: [string, "null"], format: date-time }
+
+    PlanActivationEvent:
+      type: object
+      description: 一次套餐激活事件，来自账单流水
+      properties:
+        created_at: { type: string, format: date-time }
+        amount: { type: number }
+        ref_id: { type: string, description: "形如 plan-3" }
+        plan_name: { type: string, description: 套餐已删则为空串 }
+        balance_after: { type: number }
+
+    PlanCreateRequest:
+      type: object
+      description: 新建与整体替换套餐共用的请求体
+      required: [name, mode, pricing_mode]
+      properties:
+        name: { type: string, maxLength: 64 }
+        mode: { type: string, enum: [pay_as_you_go, subscription] }
+        pricing_mode: { type: string, enum: [markup, table] }
+        markup_multiplier: { type: number, exclusiveMinimum: 0 }
+        rate_rules: { type: array, items: { $ref: "#/components/schemas/RateRule" } }
+        quota_kind: { type: string, enum: [money, requests] }
+        quota_amount: { type: number, exclusiveMinimum: 0 }
+        quota_period_days: { type: integer, exclusiveMinimum: 0 }
+        overage_mode: { type: string, enum: [disabled, bill] }
+        price: { type: number, minimum: 0 }
+        currency: { type: string, minLength: 3, maxLength: 3 }
+
+    CostInput:
+      type: object
+      description: 请求里的成本配置。形状与响应侧的 CostBlock 不同，这里是嵌套的
+      properties:
+        mode: { type: string }
+        default: { $ref: "#/components/schemas/ModelCost" }
+        tiers: { type: array, items: { $ref: "#/components/schemas/CostTier" } }
+        models:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/ModelCost" }
+        rules: { type: array, items: { $ref: "#/components/schemas/RateRule" } }
+
+    ChannelGroupRequest:
+      type: object
+      description: 新建与整体替换渠道分组共用的请求体
+      required: [name, type, base_url, models]
+      properties:
+        name: { type: string, maxLength: 64 }
+        type: { type: string, enum: [openai, anthropic] }
+        base_url: { type: string }
+        models: { type: array, minItems: 1, items: { type: string } }
+        upstream_models:
+          type: object
+          additionalProperties: { type: string }
+        supports: { type: array, items: { type: string } }
+        cost: { $ref: "#/components/schemas/CostInput" }
+        model_configs:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/ModelConfig" }
+        share_policy: { type: string, enum: [platform, public], description: 空则按 platform }
+        share_rate: { type: number, exclusiveMinimum: 0, maximum: 1 }
+        owner_user_id: { type: [integer, "null"], format: int64, description: 空表示平台自营 }
+        allow_user_accounts: { type: [boolean, "null"], description: 三态，null 表示不改动现有值 }
+        official: { type: [boolean, "null"], description: 三态 }
+        key_guide_url: { type: string, maxLength: 512 }
+
+    ProviderCheckSummary:
+      type: object
+      properties:
+        provider: { type: string }
+        channels: { type: integer }
+        ref_models: { type: integer }
+        errors: { type: array, items: { type: string } }
+
+    RefPriceView:
+      type: object
+      properties:
+        input_per_million: { type: number }
+        output_per_million: { type: number }
+        cache_read_per_million: { type: number }
+        source: { type: string }
+        checked_at: { type: string, format: date-time }
+
+    PriceFinding:
+      type: object
+      properties:
+        kind: { type: string }
+        channel: { type: string }
+        model: { type: string }
+        upstream_model: { type: string }
+        current: { $ref: "#/components/schemas/ModelCost" }
+        reference: { $ref: "#/components/schemas/RefPriceView" }
+
+    PriceCheckReport:
+      type: object
+      properties:
+        checked_at: { type: string, format: date-time }
+        providers:
+          type: array
+          items: { $ref: "#/components/schemas/ProviderCheckSummary" }
+        findings:
+          type: array
+          items: { $ref: "#/components/schemas/PriceFinding" }
+
+    ModelPrice:
+      type: object
+      properties:
+        model: { type: string }
+        input_per_million: { type: number }
+        output_per_million: { type: number }
+        cache_read_per_million: { type: number }
+        source: { type: string }
+        checked_at: { type: string, format: date-time }
+
+    ProviderCatalog:
+      type: object
+      properties:
+        sources:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              label: { type: string }
+        providers:
+          type: object
+          description: 键是来源 id（pydantic、models.dev），值是厂商名数组
+          additionalProperties:
+            type: array
+            items: { type: string }
+        host_map:
+          type: object
+          description: 键是域名后缀，值是厂商名
+          additionalProperties: { type: string }
+
+    LocalSession:
+      type: object
+      description: |
+        本机登录与注册成功的响应形状。token 与 user 在顶层，不套 data
+        —— 这是与线上的一处有意差异（线上是 `{ok,data:{token,user}}`）
+      required: [token, user]
+      properties:
+        token: { type: string }
+        user: { $ref: "#/components/schemas/User" }
+
+    PanelMe:
+      type: object
+      description: 用户端的当前用户，比管理端多了额度与预算
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        email: { type: string }
+        status: { type: integer }
+        role: { type: string }
+        credit_limit: { type: number }
+        credit_available: { type: number }
+        plan_id: { type: integer, format: int64 }
+        balance: { type: number }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        budget:
+          type: [object, "null"]
+          properties:
+            amount: { type: number }
+            period: { type: string, enum: [day, week, month] }
+            used: { type: number }
+            remaining: { type: number }
+
+    CreditTransaction:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        user_id: { type: integer, format: int64 }
+        delta: { type: number }
+        balance_after: { type: number }
+        source:
+          type: string
+          enum: [recharge, adjust, usage, channel_share, subscription]
+        ref_id: { type: string }
+        created_at: { type: string, format: date-time }
+        detail: { description: 原样透出的 JSON }
+        model: { type: string }
+        total_tokens: { type: integer, format: int64 }
+        balance_part: { type: number }
+        credit_part: { type: number }
+
+    CreditsSummary:
+      type: object
+      description: "注意这里是例外：total 在 data 里，其他分页端点的 total 都在顶层"
+      properties:
+        balance: { type: number }
+        credit_limit: { type: number }
+        credit_available: { type: number }
+        total: { type: integer, format: int64 }
+        transactions:
+          type: array
+          items: { $ref: "#/components/schemas/CreditTransaction" }
+
+    UsageSeriesItem:
+      type: object
+      properties:
+        date: { type: string }
+        requests: { type: integer }
+        tokens: { type: integer, format: int64 }
+        revenue: { type: number }
+        models:
+          type: array
+          items:
+            type: object
+            properties:
+              model: { type: string }
+              requests: { type: integer }
+              tokens: { type: integer, format: int64 }
+              revenue: { type: number }
+
+    CatalogChannel:
+      type: object
+      properties:
+        kind: { type: string, const: group }
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        type: { type: string }
+        base_url: { type: string }
+        supports: { type: array, items: { type: string } }
+        cost: { $ref: "#/components/schemas/CostBlock" }
+        cost_models: { type: object }
+        model_configs: { type: object }
+        rate_rules: { type: array, items: { $ref: "#/components/schemas/RateRule" } }
+        user_shared: { type: boolean }
+        source: { type: string, enum: [official, user, platform] }
+        accounts:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer, format: int64 }
+              name: { type: string }
+              weight: { type: number }
+              cost_multiplier: { type: number }
+              owner: { type: string, enum: [user, platform] }
+
+    CatalogModel:
+      type: object
+      properties:
+        model: { type: string }
+        channels:
+          type: array
+          items: { $ref: "#/components/schemas/CatalogChannel" }
+
+    PanelPlan:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        mode: { type: string, enum: [subscription, pay_as_you_go] }
+        quota_kind: { type: string, enum: [money, requests] }
+        pricing_mode: { type: string, enum: [markup, table] }
+        markup_multiplier: { type: number }
+        price: { type: number }
+        quota_amount: { type: number }
+        quota_period_days: { type: integer }
+        overage_mode: { type: string, enum: [disabled, bill] }
+        currency: { type: string }
+        model_count: { type: integer }
+        weight_min: { type: number }
+        weight_max: { type: number }
+        updated_at: { type: string, format: date-time }
+
+  responses:
+    BadRequest:
+      description: 参数不合法
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            error: { code: bad_request, message: 参数有误 }
+    Unauthorized:
+      description: 未登录、凭据无效，或会话已失效
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            error: { code: invalid_admin_token, message: 管理员凭据无效 }
+    Forbidden:
+      description: 已登录，但没有权限改这个资源
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            error: { code: forbidden, message: 无权操作 }
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            error: { code: not_found, message: 记录不存在 }
+    RateLimited:
+      description: 触发频控
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            error: { code: rate_limited, message: 操作过于频繁，请稍后再试 }
+    InternalError:
+      description: 服务端出错
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            error: { code: internal, message: 服务端错误 }
+    GatewayUnavailable:
+      description: 网关不可达或返回异常
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            error: { code: gateway_unavailable, message: 网关暂时不可用 }
+    GatewaySyncFailed:
+      description: 数据已存库，但下发到网关失败
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            error: { code: gateway_sync_failed, message: 同步到网关失败 }
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      tags: [Settings]
+      summary: 存活探针
+      security: []
+      x-implemented: remote
+      responses:
+        "200":
+          description: 服务活着
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkEnvelope"
+
+  /readyz:
+    get:
+      operationId: getReadyz
+      tags: [Settings]
+      summary: 就绪探针（检查 DB 与 Redis 连通）
+      security: []
+      x-implemented: remote
+      responses:
+        "200":
+          description: 依赖都通
+        "503":
+          description: 依赖不通
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, const: false }
+                  error: { type: string }
+
+  /auth/send-code:
+    post:
+      operationId: postAuthSendCode
+      tags: [Auth]
+      summary: 给邮箱发注册验证码
+      description: |
+        验证码 6 位数字，存 Redis，5 分钟有效，同一邮箱 60 秒内不能重发。
+        无论邮箱是否已注册都返回成功，避免被拿来枚举账号。
+        线上 SMTP 当前是关的，验证码只写进服务日志。
+
+        **本机未实现。**
+      security: []
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200":
+          description: 已发送（或已被限流前调用过）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/register:
+    post:
+      operationId: postAuthRegister
+      tags: [Auth]
+      summary: 注册
+      description: |
+        线上要求先拿验证码再注册；**本机跳过了验证码**，直接建账号，
+        所以本机不接受 `code` 字段。这是两边有意保留的差异。
+      security: []
+      x-implemented: local
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8, description: 线上 min=8；本机也要求至少 8 位 }
+                code:
+                  type: string
+                  pattern: "^[0-9]{6}$"
+                  description: 6 位数字验证码。线上必填，本机忽略
+                name: { type: string, description: 仅本机支持；线上由邮箱前缀自动生成 }
+      responses:
+        "200":
+          description: 线上：注册成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Session" }
+        "201":
+          description: 本机：注册成功，响应体是顶层 token 与 user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalSession" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: 邮箱或用户名已被占用
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                error: { code: email_taken, message: 邮箱已被占用 }
+
+  /auth/login:
+    post:
+      operationId: postAuthLogin
+      tags: [Auth]
+      summary: 登录
+      description: |
+        线上只收 `email`；本机还接受用户名（因为本地库合并了控制台与用户端两套用户表，
+        前者用 name 登录），并且会把邮箱转成小写再比对。
+        本机同时把 token 写进 `tokenmp_session` cookie。
+      security: []
+      x-implemented: local
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                email: { type: string, description: 线上必填；本机可改用 username }
+                username: { type: string, description: 仅本机；与 email 二选一 }
+                password: { type: string }
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalSession" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: 账号或密码不正确
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+              example: { error: 账号或密码不正确 }
+        "403":
+          description: 账号已停用
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocalErrorEnvelope" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/logout:
+    post:
+      operationId: postAuthLogout
+      tags: [Auth]
+      summary: 退出登录
+      description: |
+        会话是无状态 JWT，服务端没有可清的东西，清掉 cookie 就算退出。
+
+        **本机新增，线上没有这个端点。**
+      x-implemented: local
+      responses:
+        "200":
+          description: 已退出，下发清除 cookie 的头
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+
+  /auth/me:
+    get:
+      operationId: getAuthMe
+      tags: [Auth]
+      summary: 当前登录用户
+      x-implemented: local
+      security:
+        - bearerSession: []
+        - sessionCookie: []
+      responses:
+        "200":
+          description: 当前用户
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/password:
+    post:
+      operationId: postAuthPassword
+      tags: [Auth]
+      summary: 修改密码
+      description: |
+        改完把 `token_version` 加一，旧 token 随即失效，同时返回新签的 token。
+
+        **本机未实现。**
+      x-implemented: remote
+      security:
+        - bearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [old_password, new_password]
+              properties:
+                old_password: { type: string }
+                new_password: { type: string, minLength: 8 }
+      responses:
+        "200":
+          description: 改好了，返回新 token
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          token: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /admin/users:
+    get:
+      operationId: getAdminUsers
+      tags: [Users]
+      summary: 用户列表
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: keyword
+          in: query
+          schema: { type: string }
+          description: 按用户名模糊匹配
+        - name: sort
+          in: query
+          schema: { type: string, enum: [credit_limit, created_at, updated_at, name] }
+        - name: order
+          in: query
+          schema: { type: string, enum: [asc, desc] }
+          description: 只有 asc 生效，其余一律降序
+      responses:
+        "200":
+          description: 一页用户
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/UserView" }
+    post:
+      operationId: postAdminUsers
+      tags: [Users]
+      summary: 新建用户
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 64 }
+                credit_limit: { type: number, minimum: 0, default: 0 }
+                plan_id: { type: [integer, "null"], format: int64 }
+                email: { type: [string, "null"], format: email }
+                password: { type: [string, "null"], minLength: 8 }
+      responses:
+        "200":
+          description: 建好了
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: 用户名或邮箱冲突
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                error: { code: duplicate_name, message: 用户名已存在 }
+
+  /admin/users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getAdminUsersId
+      tags: [Users]
+      summary: 用户详情
+      x-implemented: remote
+      responses:
+        "200":
+          description: 含余额、预算与订阅快照
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/UserView" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: putAdminUsersId
+      tags: [Users]
+      summary: 改用户
+      description: "字段都是可选的，不传就不改。传 `plan_id: null` 是解绑。改密码会把 token_version 加一。"
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 64 }
+                status: { type: integer, enum: [0, 1] }
+                credit_limit: { type: number }
+                plan_id: { type: [integer, "null"], format: int64 }
+                email: { type: string }
+                password: { type: string, minLength: 8 }
+                role: { type: string, enum: [user, admin] }
+      responses:
+        "200":
+          description: 改好了
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteAdminUsersId
+      tags: [Users]
+      summary: 停用用户
+      description: 软删，只把 status 置 0，余额和流水都保留。用户不存在也返回成功
+      x-implemented: remote
+      responses:
+        "200":
+          description: 已停用
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /admin/users/{id}/budget:
+    put:
+      operationId: putAdminUsersIdBudget
+      tags: [Users]
+      summary: 设置预算封顶
+      description: enabled=false 或 amount=0 表示清除预算
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled: { type: boolean }
+                amount: { type: number, minimum: 0 }
+                period: { type: string, enum: [day, week, month] }
+      responses:
+        "200":
+          description: 设置后的预算
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/UserBudget" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/users/{id}/api_keys:
+    get:
+      operationId: getAdminUsersIdApiKeys
+      tags: [Users]
+      summary: 某用户的密钥列表
+      description: 用户不存在时返回空列表，不报 404
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 密钥列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/APIKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      operationId: postAdminUsersIdApiKeys
+      tags: [Users]
+      summary: 给用户签发密钥
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 64 }
+                expires_at: { type: string, format: date-time }
+      responses:
+        "200":
+          description: |
+            签发成功。`key` 是明文，**只在这一个响应里出现一次**，之后再也拿不到
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          id: { type: integer, format: int64 }
+                          name: { type: string }
+                          key: { type: string, description: 明文密钥 }
+                          key_prefix: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/api_keys/{id}:
+    delete:
+      operationId: deleteAdminApiKeysId
+      tags: [Users]
+      summary: 删密钥
+      description: 硬删。注意完整路径带 `/admin` 前缀，不是 `/api_keys/:id`
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 已删（不存在也返回成功）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /admin/balances/adjust:
+    post:
+      operationId: postAdminBalancesAdjust
+      tags: [Balances]
+      summary: 手工调账
+      description: 正数入账、负数扣款。正数会先冲抵已用的信用额度
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, amount, reason]
+              properties:
+                user_id: { type: integer, format: int64 }
+                amount: { type: number }
+                reason: { type: string, maxLength: 256 }
+      responses:
+        "200":
+          description: 调账结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user_id: { type: integer, format: int64 }
+                          balance_after: { type: number }
+                          ref: { type: string, description: "形如 adj-1759999999" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /admin/adjust-logs:
+    get:
+      operationId: getAdminAdjustLogs
+      tags: [Balances]
+      summary: 调账记录
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: user_id
+          in: query
+          schema: { type: string }
+        - name: operator
+          in: query
+          schema: { type: string }
+          description: 按操作人模糊匹配
+        - name: direction
+          in: query
+          schema: { type: string, enum: [credit, debit] }
+        - name: ref
+          in: query
+          schema: { type: string }
+        - name: start
+          in: query
+          schema: { type: string, format: date-time }
+          description: 非法值被静默忽略
+        - name: end
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: 一页记录
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/AdjustLogItem" }
+
+  /admin/plans:
+    get:
+      operationId: getAdminPlans
+      tags: [Plans]
+      summary: 套餐列表
+      x-implemented: remote
+      responses:
+        "200":
+          description: 全部套餐
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/PlanCore" }
+    post:
+      operationId: postAdminPlans
+      tags: [Plans]
+      summary: 新建套餐
+      description: mode=subscription 时 quota_amount 与 quota_period_days 必填
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, mode, pricing_mode]
+              properties:
+                name: { type: string, maxLength: 64 }
+                mode: { type: string, enum: [pay_as_you_go, subscription] }
+                pricing_mode: { type: string, enum: [markup, table] }
+                markup_multiplier: { type: number, exclusiveMinimum: 0 }
+                rate_rules: { type: array, items: { $ref: "#/components/schemas/RateRule" } }
+                quota_kind: { type: string, enum: [money, requests], description: 空则按 money }
+                quota_amount: { type: number, exclusiveMinimum: 0 }
+                quota_period_days: { type: integer, exclusiveMinimum: 0 }
+                overage_mode: { type: string, enum: [disabled, bill], description: 空则按 disabled }
+                price: { type: number, minimum: 0 }
+                currency: { type: string, minLength: 3, maxLength: 3 }
+      responses:
+        "200":
+          description: 建好了
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PlanCore" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: 套餐名重复
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                error: { code: duplicate_name, message: 套餐名已存在 }
+
+  /admin/plans/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getAdminPlansId
+      tags: [Plans]
+      summary: 套餐详情
+      x-implemented: remote
+      responses:
+        "200":
+          description: 套餐与它名下全部模型价
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          plan: { $ref: "#/components/schemas/PlanCore" }
+                          prices:
+                            type: array
+                            items: { $ref: "#/components/schemas/PlanPrice" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: putAdminPlansId
+      tags: [Plans]
+      summary: 整体替换套餐
+      description: 请求体与新建相同，属于整体替换：字段缺失会被写成默认值
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlanCreateRequest" }
+      responses:
+        "200":
+          description: 改好了
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteAdminPlansId
+      tags: [Plans]
+      summary: 删套餐
+      description: 软删（status=0），同时物理删掉它名下全部 plan_prices
+      x-implemented: remote
+      responses:
+        "200":
+          description: 已删
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /admin/plans/{id}/prices:
+    post:
+      operationId: postAdminPlansIdPrices
+      tags: [Plans]
+      summary: 给套餐加一条模型价
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model]
+              properties:
+                model: { type: string, maxLength: 128 }
+                cost_mode: { type: string, enum: [token, request], description: 空则按 token }
+                input_per_million: { type: number }
+                output_per_million: { type: number }
+                cache_read_per_million: { type: number }
+                cache_write_per_million: { type: number }
+                per_request: { type: number }
+                request_weight: { type: number, exclusiveMinimum: 0, description: 空则 1 }
+      responses:
+        "200":
+          description: 建好了
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PlanPrice" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: 同一套餐下这个模型已有定价
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                error: { code: duplicate_price, message: 该模型已有定价 }
+
+  /admin/plan_prices/{id}:
+    delete:
+      operationId: deleteAdminPlanPricesId
+      tags: [Plans]
+      summary: 删一条模型价
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 已删
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /admin/plan-activations/summary:
+    get:
+      operationId: getAdminPlanActivationsSummary
+      tags: [Plans]
+      summary: 套餐激活概览
+      x-implemented: remote
+      responses:
+        "200":
+          description: 订阅数、本月收入、本周激活数、七天内到期数
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          subscribers: { type: integer }
+                          month_revenue: { type: number }
+                          week_activations: { type: integer }
+                          expiring_7d: { type: integer }
+
+  /admin/plan-activations:
+    get:
+      operationId: getAdminPlanActivations
+      tags: [Plans]
+      summary: 套餐激活列表
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: user_id
+          in: query
+          schema: { type: string }
+        - name: plan_id
+          in: query
+          schema: { type: string }
+        - name: expire
+          in: query
+          schema: { type: string, enum: [7d, expired] }
+          description: 只有这两个取值生效，其他值被静默忽略
+      responses:
+        "200":
+          description: 一页激活记录
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/PlanActivationRow" }
+
+  /admin/plan-activations/{user_id}/history:
+    get:
+      operationId: getAdminPlanActivationsUserIdHistory
+      tags: [Plans]
+      summary: 某用户的激活流水
+      x-implemented: remote
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 一页账本事件
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/PlanActivationEvent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /admin/models:
+    get:
+      operationId: getAdminModels
+      tags: [Models]
+      summary: 模型目录
+      description: 从渠道组里汇总出的模型清单，带服务它的渠道名
+      x-implemented: remote
+      responses:
+        "200":
+          description: 模型列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/AdminModelView" }
+
+  /admin/models/{model}:
+    put:
+      operationId: putAdminModelsModel
+      tags: [Models]
+      summary: 改模型配置
+      description: 三项全空或全 0 表示清除该模型的配置
+      x-implemented: remote
+      parameters:
+        - name: model
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelConfig" }
+      responses:
+        "200":
+          description: 改后的模型视图。注意 channels 字段这里恒为 null
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/AdminModelView" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404":
+          description: 没有任何渠道服务这个模型
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /admin/model-share-rates:
+    get:
+      operationId: getAdminModelShareRates
+      tags: [Models]
+      summary: 模型分成比例列表
+      x-implemented: remote
+      responses:
+        "200":
+          description: 分成比例
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/ModelShareRate" }
+
+  /admin/model-share-rates/{model}:
+    parameters:
+      - name: model
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      operationId: putAdminModelShareRatesModel
+      tags: [Models]
+      summary: 设置模型分成比例
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [share_rate]
+              properties:
+                share_rate: { type: number, exclusiveMinimum: 0, maximum: 1 }
+      responses:
+        "200":
+          description: 写入后的记录
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ModelShareRate" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    delete:
+      operationId: deleteAdminModelShareRatesModel
+      tags: [Models]
+      summary: 删模型分成比例
+      x-implemented: remote
+      responses:
+        "200":
+          description: 已删
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/price-check/run:
+    post:
+      operationId: postAdminPriceCheckRun
+      tags: [Models]
+      summary: 立刻跑一次比价
+      description: 对比自己的成本与参考价，返回差异清单
+      x-implemented: remote
+      responses:
+        "200":
+          description: 比价报告
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PriceCheckReport" }
+
+  /admin/price-check/providers:
+    get:
+      operationId: getAdminPriceCheckProviders
+      tags: [Models]
+      summary: 参考价来源与厂商目录
+      x-implemented: remote
+      responses:
+        "200":
+          description: 可选来源与它们的厂商清单
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ProviderCatalog" }
+
+  /admin/price-check/reference:
+    get:
+      operationId: getAdminPriceCheckReference
+      tags: [Models]
+      summary: 拉某个厂商的参考价
+      x-implemented: remote
+      parameters:
+        - name: source
+          in: query
+          required: true
+          schema: { type: string, enum: [pydantic, models.dev] }
+        - name: provider
+          in: query
+          required: true
+          schema: { type: string, pattern: "^[a-z0-9][a-z0-9_-]*$" }
+      responses:
+        "200":
+          description: 参考价列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          prices:
+                            type: array
+                            items: { $ref: "#/components/schemas/ModelPrice" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "502":
+          description: |
+            上游拉取失败。注意这个分支的信封与其他错误不一样：
+            它同时带了 `data.prices`，且 `ok` 为 false
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, const: false }
+                  error:
+                    type: object
+                    properties:
+                      code: { type: string, const: ref_source_error }
+                      message: { type: string }
+                  data:
+                    type: object
+                    properties:
+                      prices: { type: array, items: {} }
+
+  /admin/channel-groups:
+    get:
+      operationId: getAdminChannelGroups
+      tags: [Channels]
+      summary: 渠道分组列表
+      description: 不分页，一次返回全表；total 等于本次返回的条数
+      x-implemented: remote
+      responses:
+        "200":
+          description: 分组列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          allOf:
+                            - $ref: "#/components/schemas/ChannelGroup"
+                            - type: object
+                              properties:
+                                account_count: { type: integer }
+    post:
+      operationId: postAdminChannelGroups
+      tags: [Channels]
+      summary: 新建渠道分组
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChannelGroupRequest" }
+      responses:
+        "200":
+          description: |
+            建好了。`warning` 只在推给网关失败时出现。
+            这个响应里的 `group.source` 是空的（没有填来源）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          group: { $ref: "#/components/schemas/ChannelGroup" }
+                          warning: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: 分组名重复
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                error: { code: duplicate_name, message: 分组名已存在 }
+
+  /admin/channel-groups/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getAdminChannelGroupsId
+      tags: [Channels]
+      summary: 分组详情
+      x-implemented: remote
+      responses:
+        "200":
+          description: 分组与它名下的账号
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          group: { $ref: "#/components/schemas/ChannelGroup" }
+                          accounts:
+                            type: array
+                            items: { $ref: "#/components/schemas/ChannelAccount" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: putAdminChannelGroupsId
+      tags: [Channels]
+      summary: 整体替换分组
+      description: 请求体与新建相同。改前把 synced 置 0，改后重推该组全部账号
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChannelGroupRequest" }
+      responses:
+        "200":
+          description: 改后的分组与账号
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          group: { $ref: "#/components/schemas/ChannelGroup" }
+                          accounts:
+                            type: array
+                            items: { $ref: "#/components/schemas/ChannelAccount" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteAdminChannelGroupsId
+      tags: [Channels]
+      summary: 删分组
+      description: 幂等，分组不存在也返回成功。删前会调网关把组内账号逐个删掉
+      x-implemented: remote
+      responses:
+        "200":
+          description: 已删
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /admin/channel-groups/{id}/sync:
+    post:
+      operationId: postAdminChannelGroupsIdSync
+      tags: [Channels]
+      summary: 把分组同步给网关
+      description: 注意这里 data 直接是分组对象，不像详情接口那样包一层 group
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 同步后的分组
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ChannelGroup" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { $ref: "#/components/responses/GatewaySyncFailed" }
+
+  /admin/channel-groups/{id}/discover-models:
+    post:
+      operationId: postAdminChannelGroupsIdDiscoverModels
+      tags: [Channels]
+      summary: 探测上游支持哪些模型
+      description: |
+        拿组内第一个未停用账号的密钥去调上游 GET /models，结果不落库。
+        账号密钥只用于这次探测，不会回显。
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 上游模型与本地已有的对比
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          upstream: { type: array, items: { type: string } }
+                          added: { type: array, items: { type: string } }
+                          existing: { type: array, items: { type: string } }
+        "400":
+          description: id 非法，或组内没有可用账号（code 为 no_account）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: 上游报错
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                error: { code: upstream_error, message: 上游返回异常 }
+
+  /admin/channel-groups/{id}/discover-models/apply:
+    post:
+      operationId: postAdminChannelGroupsIdDiscoverModelsApply
+      tags: [Channels]
+      summary: 把探测到的模型合进分组
+      description: 合并上游模型（保留现有顺序，新增的追加），回填上游自报的上下文参数，然后重推网关
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 已合并
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: 上游报错，或模型已保存但下发网关失败
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /admin/channel-groups/{id}/accounts:
+    get:
+      operationId: getAdminChannelGroupsIdAccounts
+      tags: [Channels]
+      summary: 分组下的账号
+      description: 不校验分组是否存在，不存在时返回空数组
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 账号列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/ChannelAccount" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      operationId: postAdminChannelGroupsIdAccounts
+      tags: [Channels]
+      summary: 给分组添加账号
+      description: |
+        `api_key` 是纯写入字段，服务端加密后存起来，任何响应都不回显。
+        新建账号的 share_state 恒为 private。
+        下发网关失败时账号已入库并被置为停用，同时返回 502。
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, api_key]
+              properties:
+                name: { type: string, maxLength: 64, description: 组内唯一 }
+                api_key: { type: string, description: 上游密钥，明文提交，不回显 }
+                weight: { type: number, minimum: 0 }
+                cost_multiplier: { type: number, exclusiveMinimum: 0 }
+      responses:
+        "201":
+          description: 建好了
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ChannelAccount" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: 组内账号名重复
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                error: { code: duplicate_account, message: 账号名已存在 }
+        "502": { $ref: "#/components/responses/GatewaySyncFailed" }
+
+  /admin/channel-accounts/{id}:
+    put:
+      operationId: putAdminChannelAccountsId
+      tags: [Channels]
+      summary: 改账号
+      description: |
+        只认下面列出的键，其他键被忽略。空对象合法，等价于只刷 updated_at。
+        `api_key` 传空串会被当成非法。
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_key: { type: string, description: 非空才接受 }
+                weight: { type: integer, minimum: 0 }
+                cost_multiplier: { type: number, exclusiveMinimum: 0 }
+                disabled: { type: boolean, description: true 会同时从网关删掉这个渠道 }
+                public: { type: boolean, description: 平台直改，跳过审核 }
+      responses:
+        "200":
+          description: 改好了
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { $ref: "#/components/responses/GatewaySyncFailed" }
+    delete:
+      operationId: deleteAdminChannelAccountsId
+      tags: [Channels]
+      summary: 删账号
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 已删（不存在也返回成功）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /admin/channels-consistency:
+    get:
+      operationId: getAdminChannelsConsistency
+      tags: [Channels]
+      summary: 对账本地与网关的渠道
+      description: 按名字逐个比，比对 base_url、是否停用与模型集合
+      x-implemented: remote
+      responses:
+        "200":
+          description: 差异清单。三个数组没内容时是 []
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          only_in_gateway:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name: { type: string }
+                                type: { type: string }
+                                base_url: { type: string }
+                          only_in_db:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name: { type: string }
+                                disabled: { type: integer }
+                                base_url: { type: string }
+                          config_mismatch:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name: { type: string }
+                                reason: { type: string }
+                          consistent: { type: boolean }
+        "502": { $ref: "#/components/responses/GatewayUnavailable" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+
+  /admin/upstream-models:
+    post:
+      operationId: postAdminUpstreamModels
+      tags: [Channels]
+      summary: 拿一组凭据探上游模型
+      description: 仅用于本次探测，不存库也不回显密钥
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, base_url, api_key]
+              properties:
+                type: { type: string, enum: [openai, anthropic] }
+                base_url: { type: string }
+                api_key: { type: string }
+      responses:
+        "200":
+          description: 上游模型清单
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          models: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "502":
+          description: 上游报错
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                error: { code: upstream_error, message: 上游返回异常 }
+
+  /admin/gateway/balancer:
+    get:
+      operationId: getAdminGatewayBalancer
+      tags: [Gateway]
+      summary: 读负载均衡配置
+      description: 纯代理，不读写本地库，返回体来自网关
+      x-implemented: remote
+      responses:
+        "200":
+          description: 均衡策略
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/GatewayBalancer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+    put:
+      operationId: putAdminGatewayBalancer
+      tags: [Gateway]
+      summary: 改负载均衡配置
+      description: 请求体不解析，原样透传给网关，网关按键合并。空体或全空白返回 400，上限 1 MiB
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: 只传要改的字段即可
+              properties:
+                strategy: { type: string, enum: [weighted_random, softmax] }
+                softmax:
+                  type: object
+                  properties:
+                    temperature: { type: number }
+                    metric: { type: string }
+                degradation:
+                  type: object
+                  properties:
+                    enabled: { type: boolean }
+                    error_rate_threshold: { type: number }
+                    weight_penalty: { type: number }
+      responses:
+        "200":
+          description: 已保存
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+
+  /admin/gateway/static-params:
+    get:
+      operationId: getAdminGatewayStaticParams
+      tags: [Gateway]
+      summary: 读网关静态参数
+      x-implemented: remote
+      responses:
+        "200":
+          description: 超时、重试、健康检查与粘性会话
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/GatewayStaticParams" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+
+  /admin/gateway/config-patch:
+    put:
+      operationId: putAdminGatewayConfigPatch
+      tags: [Gateway]
+      summary: 改一个网关参数
+      description: |
+        后端先 GET 网关全量配置，改白名单里的一个字段，再整体 PUT 回去。
+        时长参数要写成 300s 这样的字符串，整数参数传整数，开关传布尔。
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path, value]
+              properties:
+                path:
+                  type: string
+                  description: 白名单外的路径返回 unsupported_param
+                  enum:
+                    - timeout.non_stream_overall
+                    - timeout.stream_first_byte
+                    - timeout.stream_idle
+                    - retry.channel_retries
+                    - retry.cross_channel_retries
+                    - retry.max_total_attempts
+                    - health_check.failure_threshold
+                    - health_check.failure_window
+                    - health_check.cooldown_ttl
+                    - health_check.cooldown_max
+                    - sticky.enabled
+                value:
+                  description: 依 path 而定，时长传字符串、计数传整数、开关传布尔
+      responses:
+        "200":
+          description: 刷新后的参数
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/GatewayStaticParams" }
+        "400":
+          description: 路径不在白名单时 code 为 unsupported_param，取值不对时是 invalid_value
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "502":
+          description: 网关返回的配置解析不了
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+
+  /admin/gateway/reload:
+    post:
+      operationId: postAdminGatewayReload
+      tags: [Gateway]
+      summary: 让网关重载配置文件
+      x-implemented: remote
+      responses:
+        "200":
+          description: 已触发重载
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+
+  /admin/billing_records:
+    get:
+      operationId: getAdminBillingRecords
+      tags: [Billing]
+      summary: 计费流水
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: user_id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: api_key_id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: model
+          in: query
+          schema: { type: string }
+        - name: channel_name
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+          description: 服务端不校验取值
+        - name: start
+          in: query
+          schema: { type: string, format: date-time }
+          description: 非法值被静默忽略
+        - name: end
+          in: query
+          schema: { type: string, format: date-time }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [cost_amount, revenue_amount, total_tokens, created_at] }
+        - name: order
+          in: query
+          schema: { type: string, enum: [asc, desc] }
+          description: 只有 asc 生效
+      responses:
+        "200":
+          description: 一页流水
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/BillingRecord" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /admin/billing_records/{id}:
+    get:
+      operationId: getAdminBillingRecordsId
+      tags: [Billing]
+      summary: 单条计费流水
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 流水详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/BillingRecord" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/request_records:
+    get:
+      operationId: getAdminRequestRecords
+      tags: [Billing]
+      summary: 调用记录
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: keyword
+          in: query
+          schema: { type: string }
+          description: 模糊匹配 model、request_id 与 user_agent
+        - name: user_id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: model
+          in: query
+          schema: { type: string }
+        - name: user_agent
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [in_progress, success, error] }
+        - name: error_code
+          in: query
+          schema: { type: string }
+        - name: start
+          in: query
+          schema: { type: string, format: date-time }
+        - name: end
+          in: query
+          schema: { type: string, format: date-time }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [total_tokens, latency_ms, ttfb_ms, tps, created_at]
+        - name: order
+          in: query
+          schema: { type: string, enum: [asc, desc] }
+          description: 只有 asc 生效
+      responses:
+        "200":
+          description: 一页调用记录
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/RequestRecord" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /admin/request_records/filters:
+    get:
+      operationId: getAdminRequestRecordsFilters
+      tags: [Billing]
+      summary: 调用记录的筛选项
+      description: 返回表里出现过的模型与 user agent，供筛选下拉用。响应用 data，不是 items
+      x-implemented: remote
+      responses:
+        "200":
+          description: 可选筛选项
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          models: { type: array, items: { type: string } }
+                          user_agents: { type: array, items: { type: string } }
+
+  /admin/billing/reconciliation:
+    get:
+      operationId: getAdminBillingReconciliation
+      tags: [Billing]
+      summary: 未结算的请求
+      description: |
+        列出还没结算、且已经超过指定分钟的请求。固定上限 200 条，不分页，
+        所以 total 等于本次返回的条数，不是全表计数。
+      x-implemented: remote
+      parameters:
+        - name: minutes
+          in: query
+          schema: { type: integer, minimum: 1, default: 5 }
+          description: 只看超过这么久还没结算的
+      responses:
+        "200":
+          description: 候选清单
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/RequestBinding" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /admin/billing/reconciliation/{request_id}/resolve:
+    post:
+      operationId: postAdminBillingReconciliationRequestIdResolve
+      tags: [Billing]
+      summary: 处理一条未结算请求
+      description: 拉取网关回传事件补记账。没有请求体
+      x-implemented: remote
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 处理结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          request_id: { type: string }
+                          status:
+                            type: string
+                            enum: [already_billed, marked_no_usage, billed]
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "502":
+          description: 拉取网关回传失败，或回传体解析失败（后者 code 为 bad_report）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /admin/dashboard/summary:
+    get:
+      operationId: getAdminDashboardSummary
+      tags: [Dashboard]
+      summary: 概览指标
+      description: 统计窗口固定是最近 24 小时，不可调
+      x-implemented: remote
+      responses:
+        "200":
+          description: 24 小时汇总
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          last_24h:
+                            type: object
+                            properties:
+                              requests: { type: integer }
+                              success: { type: integer }
+                              success_rate: { type: number, description: 百分比，0 到 100 }
+                              cost: { type: number }
+                              revenue: { type: number }
+                          low_balance_users:
+                            type: integer
+                            description: 启用用户里余额加信用额度已经不大于 0 的人数
+
+  /admin/dashboard/usage:
+    get:
+      operationId: getAdminDashboardUsage
+      tags: [Dashboard]
+      summary: 按天的用量趋势
+      x-implemented: remote
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 90, default: 7 }
+          description: 超出范围或非法一律回退到 7
+      responses:
+        "200":
+          description: 按天升序的序列。不分页，total 等于天数
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            day: { type: string, description: "形如 2026-01-31" }
+                            requests: { type: integer }
+                            revenue: { type: number }
+
+  /admin/channel-applications:
+    get:
+      operationId: getAdminChannelApplications
+      tags: [ChannelApplications]
+      summary: 渠道开通申请列表
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, approved, rejected] }
+          description: 其他取值被静默忽略
+      responses:
+        "200":
+          description: 一页申请，每项多带一个 applicant_name
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/ChannelApplication" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /admin/channel-applications/{id}/approve:
+    post:
+      operationId: postAdminChannelApplicationsIdApprove
+      tags: [ChannelApplications]
+      summary: 通过申请
+      description: |
+        通过后会建出渠道分组与账号。请求体一律忽略，无字段可传。
+        下发网关失败时多一个 warning，但仍是 201。
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "201":
+          description: 已通过
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          group: { $ref: "#/components/schemas/ChannelGroup" }
+                          account: { $ref: "#/components/schemas/ChannelAccount" }
+                          application: { $ref: "#/components/schemas/ChannelApplication" }
+                          warning: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: 分组名冲突，或这条申请已经被处理过（code 为 already_reviewed）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /admin/channel-applications/{id}/reject:
+    post:
+      operationId: postAdminChannelApplicationsIdReject
+      tags: [ChannelApplications]
+      summary: 驳回申请
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note: { type: string, description: 驳回理由，必填 }
+      responses:
+        "200":
+          description: 已驳回
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          application: { $ref: "#/components/schemas/ChannelApplication" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: 申请已通过或已被处理（code 为 already_approved 或 already_reviewed）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /admin/error_rules:
+    get:
+      operationId: getAdminErrorRules
+      tags: [Settings]
+      summary: 错误规则列表
+      description: 纯代理，规则由网关执行与保存
+      x-implemented: remote
+      responses:
+        "200":
+          description: 规则列表，空列表也返回 []
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          rules:
+                            type: array
+                            items: { $ref: "#/components/schemas/ErrorRule" }
+        "503":
+          description: 网关侧没启用规则功能
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "502": { $ref: "#/components/responses/GatewayUnavailable" }
+    post:
+      operationId: postAdminErrorRules
+      tags: [Settings]
+      summary: 新建错误规则
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ErrorRule" }
+      responses:
+        "200":
+          description: 建好了，id 由网关分配
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          rule: { $ref: "#/components/schemas/ErrorRule" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /admin/error_rules/reorder:
+    put:
+      operationId: putAdminErrorRulesReorder
+      tags: [Settings]
+      summary: 调整规则顺序
+      description: 静态段优先于 {id}，所以这个路径不会被当成规则 id
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+                  description: 按新顺序排列的规则 id
+      responses:
+        "200":
+          description: 已重排
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /admin/error_rules/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      operationId: putAdminErrorRulesId
+      tags: [Settings]
+      summary: 改错误规则
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ErrorRule" }
+      responses:
+        "200":
+          description: 改好了
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteAdminErrorRulesId
+      tags: [Settings]
+      summary: 删错误规则
+      description: 网关返回 404 也算删除成功
+      x-implemented: remote
+      responses:
+        "200":
+          description: 已删
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /admin/platform-settings:
+    get:
+      operationId: getAdminPlatformSettings
+      tags: [Settings]
+      summary: 平台设置
+      x-implemented: remote
+      responses:
+        "200":
+          description: 平台级配置
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PlatformSettings" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    put:
+      operationId: putAdminPlatformSettings
+      tags: [Settings]
+      summary: 改分成默认比例
+      x-implemented: remote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [share_rate]
+              properties:
+                share_rate: { type: number, exclusiveMinimum: 0, maximum: 1 }
+      responses:
+        "200":
+          description: 改后的完整设置，与 GET 同构
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PlatformSettings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /admin/share-accounts:
+    get:
+      operationId: getAdminShareAccounts
+      tags: [Settings]
+      summary: 共享账号列表
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: group_id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: owner_user_id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: public
+          in: query
+          schema: { type: boolean }
+          description: 只认字面 true 或 false，其他值忽略
+        - name: disabled
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: 一页共享账号
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/ShareAccountRow" }
+
+  /admin/share-accounts/{id}/review:
+    post:
+      operationId: postAdminShareAccountsIdReview
+      tags: [Settings]
+      summary: 审核共享账号
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approve]
+              properties:
+                approve: { type: boolean, description: true 上架，false 回私有 }
+      responses:
+        "200":
+          description: 审核后的账号
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ChannelAccount" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { $ref: "#/components/responses/GatewaySyncFailed" }
+
+  /admin/share-accounts/{id}/probe:
+    post:
+      operationId: postAdminShareAccountsIdProbe
+      tags: [Settings]
+      summary: 探测共享账号
+      description: 探测成功会自动上架。无请求体
+      x-implemented: remote
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 探测结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          account: { $ref: "#/components/schemas/ChannelAccount" }
+                          models: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: 上游报错，或下发网关失败
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /user/api_keys:
+    get:
+      operationId: getUserApiKeys
+      tags: [UserPanel]
+      summary: 我的密钥
+      description: 只回前后缀，不回完整密钥
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      responses:
+        "200":
+          description: 密钥列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/APIKey" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      operationId: postUserApiKeys
+      tags: [UserPanel]
+      summary: 给自己签一把密钥
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 64 }
+                expires_at: { type: string, format: date-time }
+      responses:
+        "200":
+          description: 签发成功，key 是明文，只此一次
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          id: { type: integer, format: int64 }
+                          name: { type: string }
+                          key: { type: string }
+                          key_prefix: { type: string }
+                          expires_at: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /user/api_keys/{id}:
+    delete:
+      operationId: deleteUserApiKeysId
+      tags: [UserPanel]
+      summary: 删自己的密钥
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 已删
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /user/billing_records:
+    get:
+      operationId: getUserBillingRecords
+      tags: [UserPanel]
+      summary: 我的账单
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: model
+          in: query
+          schema: { type: string }
+        - name: request_id
+          in: query
+          schema: { type: string }
+          description: 模糊匹配
+        - name: status
+          in: query
+          schema: { type: string, enum: [success, error] }
+        - name: charge
+          in: query
+          schema: { type: string, enum: [free, paid] }
+          description: 其他取值忽略
+      responses:
+        "200":
+          description: 一页账单，每项多带 credit_paid 与 balance_paid
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          allOf:
+                            - $ref: "#/components/schemas/BillingRecord"
+                            - type: object
+                              properties:
+                                credit_paid: { type: number, description: 用信用额度付的部分 }
+                                balance_paid: { type: number, description: 用余额付的部分 }
+
+  /user/request_records:
+    get:
+      operationId: getUserRequestRecords
+      tags: [UserPanel]
+      summary: 我的调用记录
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: keyword
+          in: query
+          schema: { type: string }
+          description: 模糊匹配 model、request_id 与 user_agent
+        - name: model
+          in: query
+          schema: { type: string }
+        - name: user_agent
+          in: query
+          schema: { type: string }
+        - name: error_code
+          in: query
+          schema: { type: string }
+        - name: start
+          in: query
+          schema: { type: string, format: date-time }
+        - name: end
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: 一页调用记录
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/RequestRecord" }
+
+  /user/request_records/filters:
+    get:
+      operationId: getUserRequestRecordsFilters
+      tags: [UserPanel]
+      summary: 我的筛选项
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      responses:
+        "200":
+          description: 可选筛选项
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          models: { type: array, items: { type: string } }
+                          user_agents: { type: array, items: { type: string } }
+
+  /user/credits:
+    get:
+      operationId: getUserCredits
+      tags: [UserPanel]
+      summary: 额度与流水
+      description: "例外：total 在 data 里，不在顶层"
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 额度概览与流水
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CreditsSummary" }
+
+  /user/usage:
+    get:
+      operationId: getUserUsage
+      tags: [UserPanel]
+      summary: 我的用量趋势
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 90, default: 30 }
+      responses:
+        "200":
+          description: 按天的序列
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          series:
+                            type: array
+                            items: { $ref: "#/components/schemas/UsageSeriesItem" }
+        "400":
+          description: days 不在 1 到 90 之间（code 为 invalid_days）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /user/channel-applications/upstream-models:
+    post:
+      operationId: postUserChannelApplicationsUpstreamModels
+      tags: [UserPanel]
+      summary: 提交申请前先探一下上游模型
+      description: 凭据只用于这次探测，不落库也不回显
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, base_url, api_key]
+              properties:
+                type: { type: string, enum: [openai, anthropic] }
+                base_url: { type: string }
+                api_key: { type: string }
+      responses:
+        "200":
+          description: 上游模型清单
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          models: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "502":
+          description: 上游报错
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /user/channel-applications:
+    get:
+      operationId: getUserChannelApplications
+      tags: [UserPanel]
+      summary: 我提交的申请
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, approved, rejected] }
+          description: 其他取值忽略
+      responses:
+        "200":
+          description: 一页申请
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/ChannelApplication" }
+    post:
+      operationId: postUserChannelApplications
+      tags: [UserPanel]
+      summary: 提交渠道开通申请
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type, base_url, api_key, models]
+              properties:
+                name: { type: string, maxLength: 64 }
+                type: { type: string, enum: [openai, anthropic] }
+                base_url: { type: string }
+                api_key: { type: string, description: 上游密钥，加密存储，不回显 }
+                weight: { type: number, minimum: 0 }
+                models: { type: array, minItems: 1, items: { type: string } }
+                upstream_models:
+                  type: object
+                  additionalProperties: { type: string }
+                supports: { type: array, items: { type: string } }
+      responses:
+        "201":
+          description: 已提交
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          application: { $ref: "#/components/schemas/ChannelApplication" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /user/channel-applications/{id}:
+    delete:
+      operationId: deleteUserChannelApplicationsId
+      tags: [UserPanel]
+      summary: 撤回自己的申请
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 已撤回
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: 已经通过的申请不能撤回（code 为 already_approved）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /user/account-groups:
+    get:
+      operationId: getUserAccountGroups
+      tags: [UserPanel]
+      summary: 我能看到的渠道组
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      responses:
+        "200":
+          description: 渠道组列表，每项多带 owned_by_me 与 account_count
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          allOf:
+                            - $ref: "#/components/schemas/ChannelGroup"
+                            - type: object
+                              properties:
+                                owned_by_me: { type: boolean }
+                                account_count: { type: integer }
+
+  /user/channel-groups/{id}:
+    put:
+      operationId: putUserChannelGroupsId
+      tags: [UserPanel]
+      summary: 改我自己的渠道组
+      description: 只能改自己属主的分享组
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, base_url, models]
+              properties:
+                type: { type: string, enum: [openai, anthropic] }
+                base_url: { type: string }
+                models: { type: array, minItems: 1, items: { type: string } }
+                upstream_models:
+                  type: object
+                  additionalProperties: { type: string }
+      responses:
+        "200":
+          description: 改后的渠道组
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ChannelGroup" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { $ref: "#/components/responses/GatewaySyncFailed" }
+
+  /user/accounts:
+    get:
+      operationId: getUserAccounts
+      tags: [UserPanel]
+      summary: 我分享的账号
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      responses:
+        "200":
+          description: 账号列表，每项多带 group_name
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          allOf:
+                            - $ref: "#/components/schemas/ChannelAccount"
+                            - type: object
+                              properties:
+                                group_name: { type: string }
+    post:
+      operationId: postUserAccounts
+      tags: [UserPanel]
+      summary: 分享一个上游账号
+      description: api_key 加密存储，任何响应都不回显
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [group_id, name, api_key]
+              properties:
+                group_id: { type: integer, format: int64 }
+                name: { type: string, maxLength: 64 }
+                api_key: { type: string }
+      responses:
+        "201":
+          description: 已提交
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          account: { $ref: "#/components/schemas/ChannelAccount" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: 账号名重复（code 为 duplicate_account）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "502": { $ref: "#/components/responses/GatewaySyncFailed" }
+
+  /user/accounts/{id}/usage:
+    get:
+      operationId: getUserAccountsIdUsage
+      tags: [UserPanel]
+      summary: 我的账号被用掉多少
+      description: 非属主访问按 not_found 处理
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 用量汇总与明细
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          account_id: { type: integer, format: int64 }
+                          account_name: { type: string }
+                          channel_name: { type: string }
+                          total: { type: integer, format: int64 }
+                          requests: { type: integer }
+                          credit: { type: number }
+                          records:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                request_id: { type: string }
+                                model: { type: string }
+                                status: { type: string }
+                                prompt_tokens: { type: integer, format: int64 }
+                                completion_tokens: { type: integer, format: int64 }
+                                revenue_amount: { type: number }
+                                owner_credit_amount: { type: number }
+                                self_owned: { type: boolean }
+                                created_at: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /user/accounts/{id}:
+    patch:
+      operationId: patchUserAccountsId
+      tags: [UserPanel]
+      summary: 改分享账号的可见性
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [public]
+              properties:
+                public: { type: boolean, description: true 会进入待审核状态 }
+      responses:
+        "200":
+          description: 改后的账号
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ChannelAccount" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteUserAccountsId
+      tags: [UserPanel]
+      summary: 收回分享的账号
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 已收回
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /user/accounts/{id}/share-probe:
+    post:
+      operationId: postUserAccountsIdShareProbe
+      tags: [UserPanel]
+      summary: 自助探测并上架
+      description: 探测通过就直接上架。同一账号 60 秒内只能探一次
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model: { type: string, maxLength: 128, description: 不填则探测上游 /models }
+      responses:
+        "200":
+          description: 探测结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          account: { $ref: "#/components/schemas/ChannelAccount" }
+                          models: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502":
+          description: 上游报错，或下发网关失败
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /user/catalog:
+    get:
+      operationId: getUserCatalog
+      tags: [UserPanel]
+      summary: 可用模型目录
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      responses:
+        "200":
+          description: 模型与它背后的渠道
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          updated_at: { type: string, format: date-time }
+                          models:
+                            type: array
+                            items: { $ref: "#/components/schemas/CatalogModel" }
+
+  /user/plans:
+    get:
+      operationId: getUserPlans
+      tags: [UserPanel]
+      summary: 可订阅的套餐
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      responses:
+        "200":
+          description: 套餐列表与当前订阅
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          plans:
+                            type: array
+                            items: { $ref: "#/components/schemas/PanelPlan" }
+                          current:
+                            type: [object, "null"]
+                            properties:
+                              plan: { $ref: "#/components/schemas/PanelPlan" }
+                              quota_limit: { type: number }
+                              quota_used: { type: number }
+                              period_start: { type: string, format: date-time }
+                              period_end: { type: string, format: date-time }
+                          default_plan_id: { type: integer, format: int64 }
+
+  /user/plans/{id}/subscribe:
+    post:
+      operationId: postUserPlansIdSubscribe
+      tags: [UserPanel]
+      summary: 订阅套餐
+      description: 没有请求体
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 已订阅
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "402":
+          description: 余额不足（code 为 insufficient_balance）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /user/me:
+    get:
+      operationId: getUserMe
+      tags: [UserPanel]
+      summary: 我的账号信息
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      responses:
+        "200":
+          description: 账号、额度与预算
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PanelMe" }
+
+  /user/auto-chain:
+    get:
+      operationId: getUserAutoChain
+      tags: [UserPanel]
+      summary: 我的自动降级链
+      description: 没配过返回空数组，不是 404
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      responses:
+        "200":
+          description: 模型顺序
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          models: { type: array, items: { type: string } }
+    put:
+      operationId: putUserAutoChain
+      tags: [UserPanel]
+      summary: 改自动降级链
+      description: 传空数组表示清除。返回去重保序后的结果
+      x-implemented: remote
+      security:
+        - bearerSession: []
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                models: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: 保存后的顺序
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          models: { type: array, items: { type: string } }
+        "400":
+          description: 模型不在可见目录里（code 为 invalid_request）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
