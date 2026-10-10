@@ -1,5 +1,8 @@
 import { A, useLocation } from "@solidjs/router";
-import { Menu, Moon, Sun, X } from "lucide-solid";
+import Menu from "lucide-solid/icons/menu";
+import Moon from "lucide-solid/icons/moon";
+import Sun from "lucide-solid/icons/sun";
+import X from "lucide-solid/icons/x";
 import { createSignal, For, Show, type JSX } from "solid-js";
 
 import { cn } from "~/lib/utils";

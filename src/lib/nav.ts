@@ -1,14 +1,12 @@
-import {
-  ClipboardCheck,
-  KeyRound,
-  LayoutDashboard,
-  Layers,
-  Package,
-  ReceiptText,
-  Route,
-  Users,
-  Wallet,
-} from "lucide-solid";
+import ClipboardCheck from "lucide-solid/icons/clipboard-check";
+import KeyRound from "lucide-solid/icons/key-round";
+import LayoutDashboard from "lucide-solid/icons/layout-dashboard";
+import Layers from "lucide-solid/icons/layers";
+import Package from "lucide-solid/icons/package";
+import ReceiptText from "lucide-solid/icons/receipt-text";
+import Route from "lucide-solid/icons/route";
+import Users from "lucide-solid/icons/users";
+import Wallet from "lucide-solid/icons/wallet";
 
 import type { NavItem } from "~/components/layout/app-shell";
 

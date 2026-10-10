@@ -1,6 +1,6 @@
 import { Dialog as KDialog } from "@kobalte/core/dialog";
 import { type VariantProps } from "class-variance-authority";
-import { X } from "lucide-solid";
+import X from "lucide-solid/icons/x";
 import { Show, type JSX } from "solid-js";
 
 import { buttonVariants } from "~/components/ui/button";
@@ -9,6 +9,8 @@ import { cn } from "~/lib/utils";
 export type DialogProps = {
   /** 触发按钮的内容，样式沿用默认按钮 */
   trigger: JSX.Element;
+  /** 触发按钮的无障碍名。列表里有多行同名按钮（例如每行的「通过」）时必填，否则读屏只念出「通过」 */
+  triggerLabel?: string;
   title: string;
   description?: string;
   children?: JSX.Element;
@@ -39,7 +41,10 @@ export function DialogClose(props: {
 export function Dialog(props: DialogProps) {
   return (
     <KDialog>
-      <KDialog.Trigger class={cn(buttonVariants({ variant: "outline" }))}>
+      <KDialog.Trigger
+        aria-label={props.triggerLabel}
+        class={cn(buttonVariants({ variant: "outline" }))}
+      >
         {props.trigger}
       </KDialog.Trigger>
 

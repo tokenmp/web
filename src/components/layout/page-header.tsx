@@ -1,19 +1,16 @@
 import { Show, type JSX } from "solid-js";
 
-/** 页面头部：标题、一句说明、右侧操作区 */
+/** 页面头部：一句说明加右侧操作区。
+ * 页面名已经在顶栏显示，这里不再重复放一遍大标题。 */
 export function PageHeader(props: {
-  title: string;
   description?: string;
   children?: JSX.Element;
 }) {
   return (
-    <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 class="text-xl font-semibold tracking-tight">{props.title}</h1>
-        <Show when={props.description}>
-          <p class="mt-1 text-sm text-muted-foreground">{props.description}</p>
-        </Show>
-      </div>
+    <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+      <Show when={props.description}>
+        <p class="text-sm text-muted-foreground">{props.description}</p>
+      </Show>
       <Show when={props.children}>
         <div class="flex flex-wrap items-center gap-2">{props.children}</div>
       </Show>
