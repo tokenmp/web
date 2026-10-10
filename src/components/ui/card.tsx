@@ -4,9 +4,10 @@ import { cn } from "~/lib/utils";
 
 export function Card(props: ComponentProps<"div"> & { class?: string }) {
   const [local, others] = splitProps(props, ["class"]);
+  // 不带投影：卡片靠比页面底色亮一档分开层次，投影留给真正浮起来的弹层
   return (
     <div
-      class={cn("rounded-xl border bg-card text-card-foreground shadow-sm", local.class)}
+      class={cn("rounded-xl border bg-card text-card-foreground", local.class)}
       {...others}
     />
   );

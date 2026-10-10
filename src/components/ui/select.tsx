@@ -118,7 +118,7 @@ function SelectTrigger(props: { class?: string; disabled?: boolean }) {
     <KSelect.Trigger
       class={cn(
         // 跟 Input 同一套尺寸，工具栏里并排不会高矮不齐
-        "flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors sm:h-9",
+        "flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 text-sm inset-shadow-2xs transition-colors sm:h-9",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         "disabled:pointer-events-none disabled:opacity-50",
         props.class,

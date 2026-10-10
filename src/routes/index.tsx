@@ -49,14 +49,14 @@ export default function LoginPage() {
   };
 
   return (
-    <main class="grid min-h-dvh place-items-center bg-muted/40 px-6 py-10">
+    <main class="grid min-h-dvh place-items-center bg-muted px-6 py-10">
       <Title>登录 | TokenMP 销售控制台</Title>
 
       {/* 公告是公开接口，未登录也能看到「v0.1.0 正式发布」这类全站消息 */}
       <div class="w-full max-w-[380px] space-y-4">
         <AnnouncementBanner />
 
-        <div class="rounded-xl border bg-card p-6 shadow-sm">
+        <div class="rounded-xl border bg-card p-6">
           <div class="flex flex-col items-center gap-3">
             <div class="grid size-12 place-items-center rounded-xl bg-primary text-xl font-bold text-primary-foreground">
               T
@@ -77,7 +77,7 @@ export default function LoginPage() {
                   "inline-flex h-8 items-center justify-center rounded-md text-sm font-medium transition-all",
                   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                   tab() === value
-                    ? "bg-background text-foreground shadow-sm"
+                    ? "bg-card text-foreground"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >

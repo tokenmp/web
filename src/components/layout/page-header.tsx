@@ -34,7 +34,7 @@ export function StatRow(props: { items: { label: string; value: string; hint?: s
     <div class="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
       <For each={props.items}>
         {item => (
-          <div class="rounded-xl border bg-card p-3.5 shadow-sm sm:p-4">
+          <div class="rounded-xl border bg-card p-3.5 sm:p-4">
             <p class="text-xs text-muted-foreground sm:text-sm">{item.label}</p>
             <p class="mt-1 text-lg font-semibold tabular-nums tracking-tight sm:mt-1.5 sm:text-xl">
               {item.value}

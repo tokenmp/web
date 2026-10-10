@@ -312,7 +312,7 @@ function UserDetailSheet(props: { user: User }) {
 
       <div class="mt-6">
         <h3 class="text-sm font-medium">最近 5 次调用</h3>
-        <div class="mt-3 divide-y rounded-lg border">
+        <div class="mt-3 divide-y">
           <For each={props.user.calls}>
             {call => (
               <div class="flex items-start justify-between gap-3 p-3">

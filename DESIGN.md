@@ -1,6 +1,6 @@
 # 设计清单与组件清单
 
-本地这套界面参照线上 tokenmp.top 销售控制台复刻。设计令牌直接取自线上站点的样式表，布局与页面结构参照它的路由划分。
+本地这套界面参照线上 tokenmp.top 销售控制台复刻。设计令牌取自线上站点的样式表，布局与页面结构参照它的路由划分。底色分层与投影两处有意偏离线上，理由写在下面对应的小节里。
 
 ## 设计清单
 
@@ -10,13 +10,14 @@
 
 | 令牌 | 浅色 | 深色 | 用途 |
 | --- | --- | --- | --- |
-| `--background` | `0 0% 100%` | `222.2 84% 4.9%` | 页面底色 |
+| `--background` | `210 40% 98%` | `222.2 84% 3.4%` | 页面底色，比卡片低一档 |
 | `--foreground` | `222.2 84% 4.9%` | `210 40% 98%` | 正文 |
-| `--card` | `0 0% 100%` | `222.2 84% 4.9%` | 卡片、侧边栏、弹层 |
+| `--card` | `0 0% 100%` | `222.2 84% 5.9%` | 卡片、侧边栏、弹层 |
 | `--primary` | `222.2 47.4% 11.2%` | `210 40% 98%` | 主按钮、进度条、趋势线 |
 | `--secondary`、`--muted`、`--accent` | `210 40% 96.1%` | `217.2 32.6% 17.5%` | 次级底、悬停底、弱化区块 |
 | `--muted-foreground` | `215.4 16.3% 42%` | `215 20.2% 65.1%` | 说明文字、表头 |
-| `--border`、`--input` | `214.3 31.8% 91.4%` | `217.2 32.6% 17.5%` | 边框与输入框描边 |
+| `--border` | `214.3 31.8% 92.5%` | `217.2 32.6% 15.5%` | 分隔线与卡片描边 |
+| `--input` | `214.3 31.8% 88%` | `217.2 32.6% 20%` | 输入框与下拉触发器描边，比 `--border` 深一档 |
 | `--success-text`、`--warning-text`、`--destructive-text` | 深绿、深琥珀、深红 | 同色相提亮 | 状态徽标的文字 |
 
 `--success`、`--warning` 和三个 `-text` 令牌是线上样式表里没有的，本地补上。徽标用“15% 同色底加同色文字”，文字色要跟实心底色分开定义：线上那套 `--destructive` 在深色下是给实心按钮当底色的暗红，直接拿来写文字只有 2.09:1。分开之后浅色压深、深色提亮，最低 4.67:1，两套都过 AA。
@@ -28,6 +29,29 @@
 | 数字 | 金额和用量加 `.tabular-nums`，位数对齐 |
 | 动效 | 默认 150ms，`prefers-reduced-motion` 下全局降到 0.01ms |
 | 移动适配 | 输入框移动端 16px（避免 iOS 聚焦缩放），安全区用 `.pt-safe`、`.pb-safe` |
+
+### 底色分层
+
+页面底色比卡片低一档：浅色下是 98% 对 100%，深色下是 3.4% 对 5.9%。
+线上两处同色，卡片全靠 1 像素描边分层；本地卡片里还有次级分块，同色叠下来分不出第三层，
+描边叠描边就成了「框里套框」。
+
+分层靠底色，不靠描边。卡片、弹窗、抽屉内部要分块时用 `Inset`（`bg-muted/60`），
+不要再画一圈 `rounded border`。
+
+### 层次与阴影
+
+投影表示元素离页面多远，不当装饰用。
+
+| z 轴 | 用在哪 | 类 |
+| --- | --- | --- |
+| 平面 | 卡片、卡片内分块、列表块 | 无投影 |
+| 内凹 | 输入框、文本域、下拉触发器 | `inset-shadow-2xs` |
+| 浮层 | 下拉面板、气泡、图表提示 | `shadow-md` |
+| 模态 | 弹窗、抽屉、通知面板 | `shadow-lg` |
+
+输入框是凹下去的，光从上方来，所以用内阴影表示上沿挡光，不挂外投影。
+卡片不带投影，页面底色已经把它和背景分开了。
 
 ### 布局
 
@@ -77,6 +101,7 @@
 | --- | --- | --- |
 | Button | [button.tsx](src/components/ui/button.tsx) | default、destructive、outline、secondary、ghost、link；尺寸 sm、default、lg、icon |
 | Card | [card.tsx](src/components/ui/card.tsx) | Card 及 Header、Title、Description、Content、Footer |
+| Inset | [inset.tsx](src/components/ui/inset.tsx) | 卡片、弹窗、抽屉内部的次级区块，用 `bg-muted/60` 分层，不描边也不投影 |
 | Input | [input.tsx](src/components/ui/input.tsx) | 单一形态，移动端 16px 高 40px，桌面 14px 高 36px |
 | Label | [label.tsx](src/components/ui/label.tsx) | 单一形态 |
 | Badge | [badge.tsx](src/components/ui/badge.tsx) | default、secondary、outline、success、warning、destructive |

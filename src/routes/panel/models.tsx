@@ -13,6 +13,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { Dialog } from "~/components/ui/dialog";
+import { Inset } from "~/components/ui/inset";
 import { Input } from "~/components/ui/input";
 import { Select } from "~/components/ui/select";
 import { Sheet, SheetClose } from "~/components/ui/sheet";
@@ -239,7 +240,7 @@ export default function PanelModels() {
             <ol class="space-y-1.5">
               <For each={chain()}>
                 {(model, index) => (
-                  <li class="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                  <li class="flex items-center gap-2 rounded-md bg-muted/60 px-3 py-2 text-sm">
                     <span class="grid size-5 shrink-0 place-items-center rounded-full bg-muted text-xs tabular-nums">
                       {index() + 1}
                     </span>
@@ -312,7 +313,7 @@ function ChannelDetail(props: { model: CatalogModel }) {
     <div class="space-y-3">
       <For each={props.model.channels}>
         {channel => (
-          <section class="rounded-lg border p-3">
+          <Inset class="p-3">
             <div class="flex flex-wrap items-center gap-2">
               <h3 class="text-sm font-medium">{channel.name}</h3>
               <Badge variant="outline">{SOURCE_LABELS[channel.source] ?? channel.source}</Badge>
@@ -324,14 +325,14 @@ function ChannelDetail(props: { model: CatalogModel }) {
             <p class="mt-1.5 break-all font-mono text-xs text-muted-foreground">{channel.base_url}</p>
             <p class="mt-1 text-xs text-muted-foreground">支持 {channel.supports.join("、")}</p>
 
-            <dl class="mt-2.5 grid grid-cols-2 gap-px overflow-hidden rounded-md border bg-border">
-              <div class="bg-card px-3 py-2">
+            <dl class="mt-2.5 grid grid-cols-2 gap-3">
+              <div>
                 <dt class="text-xs text-muted-foreground">输入</dt>
                 <dd class="mt-0.5 text-sm font-medium tabular-nums">
                   {unitPrice(channel.cost_input_per_million)} 积分/M
                 </dd>
               </div>
-              <div class="bg-card px-3 py-2">
+              <div>
                 <dt class="text-xs text-muted-foreground">输出</dt>
                 <dd class="mt-0.5 text-sm font-medium tabular-nums">
                   {unitPrice(channel.cost_output_per_million)} 积分/M
@@ -354,7 +355,7 @@ function ChannelDetail(props: { model: CatalogModel }) {
                 )}
               </For>
             </ul>
-          </section>
+          </Inset>
         )}
       </For>
 

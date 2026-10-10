@@ -136,10 +136,10 @@ export default function PanelPlans() {
           <h2 class="text-sm font-semibold">用量统计</h2>
           <p class="mt-1 text-xs text-muted-foreground">按成功计费的请求统计</p>
         </div>
-        <div class="grid grid-cols-3 gap-px bg-border">
+        <div class="grid grid-cols-3 divide-x divide-border">
           <For each={usage()}>
             {item => (
-              <div class="bg-card p-4">
+              <div class="p-4">
                 <p class="text-xs text-muted-foreground">{item.label}</p>
                 <p class="mt-1 text-lg font-semibold tabular-nums">
                   {formatNumber(item.requests)} <span class="text-xs font-normal">次</span>
@@ -159,7 +159,7 @@ export default function PanelPlans() {
             {plan => {
               const active = () => plan.id === currentPlan.plan.id;
               return (
-                <Card class={active() ? "border-primary/60 shadow-md" : undefined}>
+                <Card class={active() ? "border-primary/60" : undefined}>
                   <div class="flex items-start justify-between gap-2 border-b p-4">
                     <div>
                       <div class="flex flex-wrap items-center gap-2">

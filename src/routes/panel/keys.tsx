@@ -305,7 +305,7 @@ export default function PanelKeys() {
           <p class="mb-2 text-sm text-muted-foreground">
             {created()!.name} 的密钥：
           </p>
-          <p class="break-all rounded-md border bg-muted/50 p-3 font-mono text-xs">
+          <p class="break-all rounded-md bg-muted/60 p-3 font-mono text-xs">
             {created()!.key}
           </p>
         </Show>
@@ -330,7 +330,7 @@ export default function PanelKeys() {
         }
       >
         <Show when={pendingDelete()}>
-          <p class="rounded-md border bg-muted/50 p-3 text-sm">
+          <p class="rounded-md bg-muted/60 p-3 text-sm">
             {pendingDelete()!.name ?? "未命名密钥"} ·{" "}
             <span class="font-mono text-xs">{maskedKey(pendingDelete()!)}</span>
           </p>
