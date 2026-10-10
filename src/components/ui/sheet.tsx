@@ -31,11 +31,20 @@ export type SheetProps = {
   description?: string;
   children?: JSX.Element;
   footer?: JSX.Element;
+  /** 宽度等外覆样式。要更宽或更窄时传进来，不必在页面里复制整套外壳 */
+  class?: string;
 };
 
+/**
+ * 两种抽屉的尺寸。
+ *
+ * 右侧抽屉原来固定 320px，放详情太挤：指标格得挤成两列，渠道明细那种四列表格
+ * 直接横滚。改成跟着断点长：手机上占大半屏（留一点底页看得出可以点外面关掉），
+ * 平板 26rem，桌面 32rem —— 跟线上面板详情弹窗的 max-w-lg 一个量级。
+ */
 const panelBySide: Record<SheetSide, string> = {
   right:
-    "inset-y-0 right-0 h-full w-80 max-w-[85vw] border-l animate-panel-slide-left-in",
+    "inset-y-0 right-0 h-full w-[92vw] border-l animate-panel-slide-left-in sm:w-[26rem] lg:w-[32rem]",
   bottom:
     "inset-x-0 bottom-0 max-h-[85dvh] rounded-t-xl border-t animate-panel-slide-up-in pb-safe",
 };
@@ -59,6 +68,7 @@ export function Sheet(props: SheetProps) {
           class={cn(
             "fixed z-50 flex flex-col bg-card shadow-lg focus:outline-none",
             panelBySide[side()],
+            props.class,
           )}
         >
           <div class="flex items-start justify-between gap-4 border-b p-5">
