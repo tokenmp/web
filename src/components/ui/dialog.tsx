@@ -1,14 +1,17 @@
 import { Dialog as KDialog } from "@kobalte/core/dialog";
 import { type VariantProps } from "class-variance-authority";
 import X from "lucide-solid/icons/x";
-import { Show, type JSX } from "solid-js";
+import { children, createEffect, Show, type JSX } from "solid-js";
 
 import { buttonVariants } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 
 export type DialogProps = {
-  /** 触发按钮的内容，样式沿用默认按钮 */
-  trigger: JSX.Element;
+  /**
+   * 触发按钮的内容，样式沿用默认按钮。受控用法（传 open）可以不传，
+   * 由页面自己的按钮打开 —— 比如列表行里的「编辑」和「新建」共用同一个表单弹窗。
+   */
+  trigger?: JSX.Element;
   /** 触发按钮的无障碍名。列表里有多行同名按钮（例如每行的「通过」）时必填，否则读屏只念出「通过」 */
   triggerLabel?: string;
   title: string;
@@ -17,6 +20,9 @@ export type DialogProps = {
   /** 底部操作区，不传就给一个「关闭」 */
   footer?: JSX.Element;
   class?: string;
+  /** 受控开合。不传时由内部 Trigger 自己管 */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 /** 放在底部操作区里的关闭按钮，能拿到 Dialog 的上下文 */
@@ -44,18 +50,56 @@ export function DialogClose(props: {
  * 结果就是整页报 template is not a function 并空白。
  */
 export function Dialog(props: DialogProps) {
+  // trigger 现在可有可无：<Show> 里判断一次、渲染时再取一次会把同一个 JSX
+  // 求值两遍，用 children() 求值一次并缓存住，两处读到的是同一个元素实例
+  const trigger = children(() => props.trigger);
+
+  // 受控用法没有 Trigger，Kobalte 关掉时不知道该把焦点还给谁（它只认 triggerRef），
+  // 焦点会掉到 body，键盘用户得从头 Tab 一遍。自己记一个，关掉之后还回去。
+  let contentEl: HTMLElement | undefined;
+  let restoreTo: HTMLElement | null = null;
+
+  createEffect(() => {
+    if (props.open === undefined) return; // 有 Trigger 的用法交给 Kobalte 自己管
+
+    if (props.open) {
+      restoreTo = (document.activeElement as HTMLElement | null) ?? null;
+      return;
+    }
+
+    const target = restoreTo;
+    restoreTo = null;
+    if (!target) return;
+
+    // 要等弹层真的从 DOM 里消失再还：它卸载时会 preventDefault 掉浏览器的焦点归还，
+    // 这时候插进去会被它盖住。卸载早晚跟动效有关，所以按帧等到节点掉线。
+    const attempt = (frames: number) => {
+      if (contentEl?.isConnected && frames < 60) {
+        requestAnimationFrame(() => attempt(frames + 1));
+        return;
+      }
+      if (target.isConnected) target.focus();
+    };
+    requestAnimationFrame(() => attempt(0));
+  });
+
   return (
-    <KDialog>
-      <KDialog.Trigger
-        aria-label={props.triggerLabel}
-        class={cn(buttonVariants({ variant: "outline" }))}
-      >
-        {props.trigger}
-      </KDialog.Trigger>
+    <KDialog open={props.open} onOpenChange={props.onOpenChange}>
+      <Show when={trigger()}>
+        <KDialog.Trigger
+          aria-label={props.triggerLabel}
+          class={cn(buttonVariants({ variant: "outline" }))}
+        >
+          {trigger()}
+        </KDialog.Trigger>
+      </Show>
 
       <KDialog.Portal>
         <KDialog.Overlay class="animate-overlay-in fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px]" />
         <KDialog.Content
+          ref={el => {
+            contentEl = el as HTMLElement;
+          }}
           class={cn(
             "animate-panel-fade-in fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md",
             "-translate-x-1/2 -translate-y-1/2 rounded-xl border bg-card p-6 shadow-lg",

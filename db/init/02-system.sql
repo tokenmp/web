@@ -88,3 +88,26 @@ CREATE TABLE IF NOT EXISTS announcement_dismissals (
   CONSTRAINT fk_announcement_dismissals_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
   CONSTRAINT fk_announcement_dismissals_announcement FOREIGN KEY (announcement_id) REFERENCES announcements (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- 两条种子数据，新起的库一登录就能看到公告条和通知铃铛的样子。
+--
+-- 都写了 WHERE NOT EXISTS：init 脚本在数据卷还在时会被再跑一遍
+-- （docker compose up 每次都会执行 db/init 下的脚本），不带这个条件会插重复。
+
+-- 一条已发布的公告。线上「v0.1.0 正式发布」就是这么发的，不分开发版说明和公告。
+INSERT INTO announcements (title, body, severity, scope, dismissible, status, sort_order, publish_from)
+SELECT 'v0.1.0 正式发布',
+       '控制台上线：用户、余额、计费、渠道几个模块都可以用了。\n有问题在控制台里提，或直接回邮件。',
+       'info', 'all', 1, 'published', 0, NOW(3)
+WHERE NOT EXISTS (SELECT 1 FROM announcements);
+
+-- 一条欢迎通知，发给控制台管理员。库里还没有管理员时这条不会插进去 ——
+-- 用户是从线上导进来的，导入时再跑一次这个脚本就有了。
+INSERT INTO notifications (user_id, type, title, body, severity, action_label, action_url, idempotency_key, created_at)
+SELECT u.id, 'system_welcome', '欢迎使用 TokenMP 控制台',
+       '左侧是全部功能，右上角可以切主题、退出登录。', 'info',
+       '看看概览', '/dashboard', 'seed:system_welcome', NOW(3)
+FROM users u
+WHERE u.role = 'admin'
+  AND NOT EXISTS (SELECT 1 FROM notifications WHERE idempotency_key = 'seed:system_welcome')
+LIMIT 1;
