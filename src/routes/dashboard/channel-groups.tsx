@@ -133,8 +133,8 @@ export default function DashboardChannelGroups() {
                         aria-checked={active()}
                         onClick={() => setStrategy(item.name)}
                         class={cn(
-                          "w-full rounded-lg border p-3 text-left transition-colors",
-                          active() ? "border-primary bg-primary/5" : "hover:bg-accent",
+                          "w-full rounded-lg p-3 text-left transition-colors",
+                          active() ? "bg-primary/10 ring-1 ring-primary" : "bg-muted/50 hover:bg-accent",
                         )}
                       >
                         <span class="flex items-center justify-between text-sm font-medium">

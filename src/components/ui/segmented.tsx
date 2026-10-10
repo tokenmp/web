@@ -36,7 +36,7 @@ export function Segmented<T extends string>(props: {
               "inline-flex h-8 items-center justify-center rounded-md px-3 text-sm font-medium transition-colors",
               "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
               props.value === option.value
-                ? "bg-primary text-primary-foreground shadow-sm"
+                ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
             )}
           >

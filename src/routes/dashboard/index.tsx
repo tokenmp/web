@@ -121,7 +121,7 @@ export default function DashboardOverview() {
           <div class="overflow-x-auto">
             <table class="w-full min-w-[720px] text-sm">
               <thead>
-                <tr class="border-y bg-muted/50 text-muted-foreground">
+                <tr class="border-y bg-muted/60 text-muted-foreground">
                   <Th>订单号</Th>
                   <Th>用户</Th>
                   <Th>套餐</Th>

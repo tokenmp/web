@@ -200,7 +200,7 @@ export default function DashboardApiKeys() {
 
                 <div class="space-y-2">
                   <p class="text-sm font-medium">权限说明</p>
-                  <ul class="space-y-2 rounded-lg border p-3">
+                  <ul class="space-y-2 rounded-lg bg-muted/60 p-3">
                     <For each={permissions}>
                       {item => (
                         <li class="flex items-start gap-2 text-xs text-muted-foreground">

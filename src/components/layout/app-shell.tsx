@@ -77,7 +77,7 @@ export function AppShell(props: {
   );
 
   return (
-    <div class="min-h-dvh bg-muted/30">
+    <div class="min-h-dvh">
       {/* 桌面端侧边栏 */}
       <aside class="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r bg-card lg:flex">
         {brand()}

@@ -94,7 +94,7 @@ export function ResponsiveTable<T>(props: {
 
         <For each={props.items}>
           {item => (
-            <div class="rounded-lg border bg-card shadow-sm">
+            <div class="rounded-lg border bg-card">
               <div
                 class="flex items-center gap-3 px-4 py-3"
                 onClick={() => props.onRowClick?.(item)}

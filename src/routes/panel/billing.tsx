@@ -227,7 +227,7 @@ export default function PanelBilling() {
           }
         />
 
-        <div class="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/60 px-5 py-3">
           <p class="text-sm text-muted-foreground">
             筛选出 {formatNumber(filtered().length)} 条，本次消耗{" "}
             <DecimalSplit text={formatPoints(revenueTotal())} /> 积分

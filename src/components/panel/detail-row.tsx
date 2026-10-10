@@ -10,13 +10,13 @@ export function DetailRow(props: { label: string; value: JSX.Element }) {
   );
 }
 
-/** 详情里的一组指标格：两列平铺，用 1px 间隙画出分隔线 */
+/** 详情里的一组指标格：两列平铺。外面已经是抽屉或卡片，这里不再描边，只靠间距分组 */
 export function MetricGrid(props: { items: { label: string; value: string }[] }) {
   return (
-    <dl class="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border">
+    <dl class="grid grid-cols-2 gap-x-4 gap-y-3">
       <For each={props.items}>
         {item => (
-          <div class="bg-card px-3 py-2.5">
+          <div>
             <dt class="text-xs text-muted-foreground">{item.label}</dt>
             <dd class="mt-0.5 text-sm font-medium tabular-nums">{item.value}</dd>
           </div>

@@ -15,6 +15,7 @@ import { DecimalSplit } from "~/components/ui/decimal-split";
 import { Dialog } from "~/components/ui/dialog";
 import { EmptyState } from "~/components/ui/empty-state";
 import { Input } from "~/components/ui/input";
+import { Inset } from "~/components/ui/inset";
 import { Label } from "~/components/ui/label";
 import { Segmented } from "~/components/ui/segmented";
 import { Select } from "~/components/ui/select";
@@ -427,7 +428,7 @@ export default function PanelAccounts() {
         }
       >
         <Show when={pendingDelete()}>
-          <p class="rounded-md border bg-muted/50 p-3 text-sm">
+          <p class="rounded-md bg-muted/60 p-3 text-sm">
             {pendingDelete()!.name} · {pendingDelete()!.group_name}
           </p>
         </Show>
@@ -490,19 +491,19 @@ function AccountUsagePanel(props: { account: SharedAccount }) {
   return (
     <div class="space-y-5">
       <dl class="grid grid-cols-2 gap-3">
-        <div class="rounded-lg border p-3">
+        <Inset class="p-3">
           <dt class="text-xs text-muted-foreground">调用次数</dt>
           <dd class="mt-1 text-lg font-semibold tabular-nums">
             {formatNumber(usage().requests)}
           </dd>
-        </div>
-        <div class="rounded-lg border p-3">
+        </Inset>
+        <Inset class="p-3">
           <dt class="text-xs text-muted-foreground">累计分成</dt>
           <dd class="mt-1 text-lg font-semibold">
             <DecimalSplit text={formatPoints(usage().credit)} />
             <span class="ml-1 text-xs font-normal text-muted-foreground">积分</span>
           </dd>
-        </div>
+        </Inset>
       </dl>
 
       <Show
@@ -510,7 +511,7 @@ function AccountUsagePanel(props: { account: SharedAccount }) {
         fallback={<EmptyState title="暂无调用" description="该账号还没有被别人调用过" />}
       >
         <Section title="调用明细" caption="自用 = 我自己发起的调用，不计分成">
-          <ul class="divide-y rounded-lg border">
+          <ul class="divide-y">
             <For each={usage().records}>
               {record => (
                 <li class="flex items-center justify-between gap-3 px-3 py-2.5">

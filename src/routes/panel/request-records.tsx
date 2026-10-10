@@ -263,7 +263,7 @@ function RecordDetail(props: { record: RequestRecord }) {
             {record().http_status ? ` · HTTP ${record().http_status}` : ""}
           </p>
           <Show when={record().error_message}>
-            <p class="mt-2 break-words rounded border bg-card/60 p-2 font-mono text-[11px] text-muted-foreground">
+            <p class="mt-2 break-words border-l-2 border-destructive/40 pl-2 font-mono text-[11px] text-muted-foreground">
               {record().error_message}
             </p>
           </Show>

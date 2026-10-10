@@ -16,7 +16,7 @@ export function Table(props: ComponentProps<"div"> & { class?: string; tableClas
 
 export function TableHeader(props: ComponentProps<"thead"> & { class?: string }) {
   const [local, others] = splitProps(props, ["class"]);
-  return <thead class={cn("bg-muted/50 text-muted-foreground [&_tr]:border-b", local.class)} {...others} />;
+  return <thead class={cn("bg-muted/60 text-muted-foreground [&_tr]:border-b", local.class)} {...others} />;
 }
 
 export function TableBody(props: ComponentProps<"tbody"> & { class?: string }) {
