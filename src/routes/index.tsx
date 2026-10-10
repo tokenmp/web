@@ -1,5 +1,6 @@
 import { Title } from "@solidjs/meta";
-import { Eye, EyeOff } from "lucide-solid";
+import Eye from "lucide-solid/icons/eye";
+import EyeOff from "lucide-solid/icons/eye-off";
 import { createSignal, Show } from "solid-js";
 
 import { Button } from "~/components/ui/button";

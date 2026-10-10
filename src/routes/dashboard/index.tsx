@@ -1,5 +1,6 @@
 import { Title } from "@solidjs/meta";
-import { ArrowDownRight, ArrowUpRight } from "lucide-solid";
+import ArrowDownRight from "lucide-solid/icons/arrow-down-right";
+import ArrowUpRight from "lucide-solid/icons/arrow-up-right";
 import { For, type JSX } from "solid-js";
 
 import { Badge } from "~/components/ui/badge";

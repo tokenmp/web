@@ -44,14 +44,14 @@
 | --- | --- | --- |
 | `/` | 登录，登录与注册分段切换，密码可见性开关 | 已实现，未接接口 |
 | `/dashboard` | 概览，4 张指标卡、14 天消耗趋势、渠道占比、最近订单 | 已实现，示例数据 |
-| `/dashboard/users` | 用户列表 | 未做 |
-| `/dashboard/balances` | 余额 | 未做 |
-| `/dashboard/api-keys` | API 密钥 | 未做 |
-| `/dashboard/plans` | 套餐 | 未做 |
-| `/dashboard/billing` | 计费 | 未做 |
-| `/dashboard/channels` | 渠道 | 未做 |
-| `/dashboard/channel-groups` | 渠道分组 | 未做 |
-| `/dashboard/channel-applications` | 渠道申请 | 未做 |
+| `/dashboard/users` | 用户列表 | 已实现，示例数据 |
+| `/dashboard/balances` | 余额 | 已实现，示例数据 |
+| `/dashboard/api-keys` | API 密钥 | 已实现，示例数据 |
+| `/dashboard/plans` | 套餐 | 已实现，示例数据 |
+| `/dashboard/billing` | 计费 | 已实现，示例数据 |
+| `/dashboard/channels` | 渠道 | 已实现，示例数据 |
+| `/dashboard/channel-groups` | 渠道分组 | 已实现，示例数据 |
+| `/dashboard/channel-applications` | 渠道申请 | 已实现，示例数据 |
 
 线上另外还有一套用户侧页面（`/panel` 下的概览、密钥、账单、模型、渠道、我的），本地还没开始。
 
@@ -68,6 +68,8 @@
 | Input | [input.tsx](src/components/ui/input.tsx) | 单一形态，移动端 16px 高 40px，桌面 14px 高 36px |
 | Label | [label.tsx](src/components/ui/label.tsx) | 单一形态 |
 | Badge | [badge.tsx](src/components/ui/badge.tsx) | default、secondary、outline、success、warning、destructive |
+| Segmented | [segmented.tsx](src/components/ui/segmented.tsx) | 分段切换，选中项用主色实心底；选项可传字符串数组或 {value, label} |
+| Table | [table.tsx](src/components/ui/table.tsx) | Table、TableHeader、TableBody、TableRow、TableHead、TableCell，窄屏横向滚动 |
 | Dialog | [dialog.tsx](src/components/ui/dialog.tsx) | 居中模态，底部操作区可自定义，配套 `DialogClose` |
 | Sheet | [sheet.tsx](src/components/ui/sheet.tsx) | `side="right"` 桌面右侧抽屉，`side="bottom"` 移动端底部抽屉，配套 `SheetClose` |
 
@@ -76,6 +78,8 @@
 | 组件 | 文件 | 说明 |
 | --- | --- | --- |
 | AppShell | [app-shell.tsx](src/components/layout/app-shell.tsx) | 侧边栏、顶栏、移动抽屉。接收 `nav` 数组，按路径最长匹配点亮导航项，抽屉关闭时带 `inert` |
+| PageHeader | [page-header.tsx](src/components/layout/page-header.tsx) | 页面头部：一句说明加右侧操作区。页面名由顶栏显示，这里不再重复放标题 |
+| StatRow | 同上 | 一排指标卡，页面概览用 |
 
 ### 页面内组件
 

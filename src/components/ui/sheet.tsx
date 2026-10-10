@@ -1,6 +1,6 @@
 import { Dialog as KDialog } from "@kobalte/core/dialog";
 import { type VariantProps } from "class-variance-authority";
-import { X } from "lucide-solid";
+import X from "lucide-solid/icons/x";
 import { Show, type JSX } from "solid-js";
 
 import { buttonVariants } from "~/components/ui/button";

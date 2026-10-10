@@ -1,5 +1,8 @@
 import { A, useLocation } from "@solidjs/router";
-import { Menu, Moon, Sun, X } from "lucide-solid";
+import Menu from "lucide-solid/icons/menu";
+import Moon from "lucide-solid/icons/moon";
+import Sun from "lucide-solid/icons/sun";
+import X from "lucide-solid/icons/x";
 import { createSignal, For, Show, type JSX } from "solid-js";
 
 import { cn } from "~/lib/utils";
@@ -58,7 +61,9 @@ export function AppShell(props: {
     </nav>
   );
 
-  const brand = (
+  // 写成函数而不是常量：同一个 JSX 元素实例只能在 DOM 里出现一次，
+  // 常量被两处引用时，第二次插入会把节点从第一处移走，侧边栏的 logo 就空了
+  const brand = () => (
     <div class="flex items-center gap-2.5 px-5 py-4">
       <div class="grid size-8 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
         T
@@ -71,7 +76,7 @@ export function AppShell(props: {
     <div class="min-h-dvh bg-muted/30">
       {/* 桌面端侧边栏 */}
       <aside class="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r bg-card lg:flex">
-        {brand}
+        {brand()}
         <div class="flex-1 overflow-y-auto py-2">{navList()}</div>
         <div class="border-t p-3">
           <ThemeToggle />
@@ -94,7 +99,7 @@ export function AppShell(props: {
         inert={drawerOpen() ? undefined : true}
       >
         <div class="flex items-center justify-between">
-          {brand}
+          {brand()}
           <button
             type="button"
             aria-label="关闭菜单"
