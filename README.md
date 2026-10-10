@@ -155,6 +155,32 @@ bunx @redocly/cli lint openapi.yaml
 规则配置在 [redocly.yaml](redocly.yaml)，关掉了「服务器地址不能是 localhost」
 （本机后端就是 localhost），并把「每个操作都要写 4xx」降成提示而不是错误。
 
+## 用户面板
+
+线上那套是 React 写的（页面在它的 `src/pages/panel/`），本地这份按同样的信息架构重写成 Solid：
+十个页面、分组侧栏、手机端底栏。数据全部是示例数据（放在 [src/lib/panel-data.ts](src/lib/panel-data.ts)），
+字段名照 [openapi.yaml](openapi.yaml) 里 `UserPanel` 那组端点，接后端时把数据源换成 fetch 就行。
+
+跟控制台（`/dashboard`）的几处差别：
+
+| | 控制台 | 用户面板 |
+| --- | --- | --- |
+| 侧栏 | 平铺十项 | 分四组（模型与密钥 / 数据 / 财务 / 账户） |
+| 断点 | `lg`（1024px） | `md`（768px）：平板上也该用侧栏 |
+| 手机底栏 | 四项加「更多」 | 五项（概览 / 密钥 / 模型 / 请求 / 我的） |
+| 金额单位 | 美元 | 积分（1 元 = 10000 积分） |
+| 列表 | 窄屏横向滚动 | 桌面表格 / 手机卡片流（`ResponsiveTable`） |
+
+单位不一致是跟着各自线上版本走的，不是随手写的：线上两套界面一个用 ¥/积分，一个用 $。
+接真实数据时应该统一，控制台那边改 `formatCurrency` 的调用即可。
+
+本机为了少引基础组件做的取舍，都记在这里：
+
+- **筛选**：线上的模型 / User Agent 是可搜索下拉，本机用搜索框加状态分段（没有 Select 组件）。
+- **分页**：线上手机端是「卡片流 + 加载更多」，本机桌面手机共用一套分页条。
+- **套餐订阅**：线上由管理员切换，本机做了确认流程，但没接支付。
+- **模型目录**：线上还有倍率规则、阶梯计价这些销售侧配置，用户面板里只留了参考价。
+
 ## 布局
 
 桌面端用左侧固定侧边栏装下全部导航，顶栏右上角是账户菜单（身份信息、主题切换、退出登录）。
@@ -175,9 +201,10 @@ props 上的字段是惰性 getter。同一个 JSX 类型的 prop 在一处读�
 
 | 路径 | 内容 |
 | --- | --- |
-| [src/routes](src/routes) | 文件路由，`index.tsx` 是登录页，`dashboard.tsx` 是控制台布局，`api/auth/` 是登录相关接口 |
+| [src/routes](src/routes) | 文件路由：`index.tsx` 登录页、`dashboard.tsx` 控制台、`panel.tsx` 用户面板、`api/` 接口 |
 | [src/components/ui](src/components/ui) | 基础组件，shadcn/ui 写法 |
-| [src/components/layout](src/components/layout) | 控制台外壳、公告条、通知铃铛、页头 |
+| [src/components/layout](src/components/layout) | 两套外壳、公告条、通知铃铛、页头 |
+| [src/components/panel](src/components/panel) | 面板专用：响应式列表、用量图、详情行 |
 | [src/store](src/store) | 外观偏好 |
 | [src/lib](src/lib) | 类名合并、数字与时间格式化、数据库连接、认证、系统级数据（`system.ts`） |
 | [docker-compose.yml](docker-compose.yml) | 本地开发用的 MySQL |

@@ -38,6 +38,9 @@
 | 内容区 | 左边距 240px，内边距 24px | 内边距 16px 到 20px |
 | 主题切换 | 侧边栏底部，带文字 | 顶栏右侧，只有图标 |
 
+用户面板（`/panel`）是另一套外壳：侧栏按 模型与密钥 / 数据 / 财务 / 账户 分四组，断点用 `md`（768px），
+手机底栏五项铺满，登出与换主题收进「个人中心」页。版面与线上一致，取舍写在 [README](README.md) 的「用户面板」一节。
+
 ### 页面
 
 | 路由 | 页面 | 状态 |
@@ -53,8 +56,16 @@
 | `/dashboard/channel-groups` | 渠道分组 | 已实现，示例数据 |
 | `/dashboard/channel-applications` | 渠道申请 | 已实现，示例数据 |
 | `/dashboard/announcements` | 公告管理，草稿到发布的流程 | 已实现，接了后端接口 |
-
-线上另外还有一套用户侧页面（`/panel` 下的概览、密钥、账单、模型、渠道、我的），本地还没开始。
+| `/panel` | 用户面板概览，五格指标、近 7 日用量图、当前套餐、最近流水 | 已实现，示例数据 |
+| `/panel/keys` | 我的密钥，新建后明文只弹一次 | 已实现，示例数据 |
+| `/panel/models` | 模型目录与降级链 | 已实现，示例数据 |
+| `/panel/request-records` | 请求日志，带详情抽屉 | 已实现，示例数据 |
+| `/panel/billing` | 账单流水 | 已实现，示例数据 |
+| `/panel/credits` | 余额明细 | 已实现，示例数据 |
+| `/panel/plans` | 套餐与订阅 | 已实现，示例数据 |
+| `/panel/accounts` | 分享的渠道账号 | 已实现，示例数据 |
+| `/panel/channels` | 我的渠道与申请 | 已实现，示例数据 |
+| `/panel/me` | 个人中心，额度、预算与偏好 | 已实现，示例数据 |
 
 ## 组件清单
 
@@ -72,6 +83,10 @@
 | Segmented | [segmented.tsx](src/components/ui/segmented.tsx) | 分段切换，选中项用主色实心底；选项可传字符串数组或 {value, label} |
 | Table | [table.tsx](src/components/ui/table.tsx) | Table、TableHeader、TableBody、TableRow、TableHead、TableCell，窄屏横向滚动 |
 | Textarea | [textarea.tsx](src/components/ui/textarea.tsx) | 单一形态，样式跟 Input 一致，用于公告正文 |
+| Switch | [switch.tsx](src/components/ui/switch.tsx) | 开关，Kobalte 原语，真实 checkbox 藏在圆点下面（键盘与读屏都能用） |
+| EmptyState | [empty-state.tsx](src/components/ui/empty-state.tsx) | 空态：标题、说明与可选操作，失败态另写 |
+| DecimalSplit | [decimal-split.tsx](src/components/ui/decimal-split.tsx) | 大数拆分：整数部分常规、小数部分更小更淡 |
+| Pager | [pager.tsx](src/components/ui/pager.tsx) | 分页条，`PagerIfNeeded` 只在一页放不下时才出现 |
 | Dialog | [dialog.tsx](src/components/ui/dialog.tsx) | 居中模态，底部操作区可自定义，配套 `DialogClose` |
 | Sheet | [sheet.tsx](src/components/ui/sheet.tsx) | `side="right"` 桌面右侧抽屉，`side="bottom"` 移动端底部抽屉，配套 `SheetClose` |
 
@@ -85,6 +100,19 @@
 | NotificationBell | [notification-bell.tsx](src/components/layout/notification-bell.tsx) | 顶栏通知铃铛，Kobalte Popover 装的列表，带未读徽标 |
 | PageHeader | [page-header.tsx](src/components/layout/page-header.tsx) | 页面头部：一句说明加右侧操作区。页面名由顶栏显示，这里不再重复放标题 |
 | StatRow | 同上 | 一排指标卡，页面概览用 |
+
+### 面板组件
+
+放在 [src/components/panel](src/components/panel)，只给用户面板用。
+
+| 组件 | 文件 | 说明 |
+| --- | --- | --- |
+| ResponsiveTable | [responsive-table.tsx](src/components/panel/responsive-table.tsx) | 同一份数据桌面渲染表格、手机渲染卡片流，用 `md:` 切换，不靠 JS 判断断点 |
+| UsageChart | [usage-chart.tsx](src/components/panel/usage-chart.tsx) | 近 7 日按模型堆叠的柱状图，手写 SVG，悬浮出当天明细 |
+| Delta | [delta.tsx](src/components/panel/delta.tsx) | 流水变动，入账成功色、扣款危险色，带符号 |
+| DetailRow / MetricGrid | [detail-row.tsx](src/components/panel/detail-row.tsx) | 详情抽屉里的「标签 - 值」行与指标格 |
+| CopyableId | [copyable-id.tsx](src/components/panel/copyable-id.tsx) | 请求 ID 这类标识，等宽加复制按钮 |
+| Section | [section.tsx](src/components/panel/section.tsx) | 分节标题加说明 |
 
 ### 页面内组件
 
@@ -104,5 +132,8 @@
 | [src/store/theme.ts](src/store/theme.ts) | 外观偏好，值为 `light`、`dark`、`system`，存 `localStorage` 的 `tokenmp.theme`，落到 `<html class="dark">` |
 | [src/lib/utils.ts](src/lib/utils.ts) | `cn()` 合并类名，`formatNumber()`、`formatCurrency()` 与几个时间格式化 |
 | [src/lib/system.ts](src/lib/system.ts) | 版本、公告、通知的客户端数据层，走 `/api` 下的接口 |
+| [src/lib/panel-data.ts](src/lib/panel-data.ts) | 用户面板的示例数据与类型，字段名照 openapi.yaml 的 UserPanel 一组 |
+| [src/lib/panel-labels.ts](src/lib/panel-labels.ts) | 面板里各种状态值到徽标的映射 |
+| [src/lib/panel-nav.tsx](src/lib/panel-nav.tsx) | 面板的分组导航与手机底栏 |
 | [src/lib/resource.ts](src/lib/resource.ts) | `createClientResource()`：只在客户端取数，避开 SSR 下的相对路径 `fetch` |
 | [src/entry-server.tsx](src/entry-server.tsx) | 首屏内联脚本，在 bundle 之前读偏好加 `.dark`，避免闪白 |

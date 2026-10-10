@@ -76,3 +76,63 @@ export function toDateTimeLocal(value: string | Date | null | undefined) {
     `T${pad(date.getHours())}:${pad(date.getMinutes())}`
   );
 }
+
+/* ------------------------------------------------------------------ 积分 */
+
+/**
+ * 积分口径：1 元 = 10000 积分。存储与结算仍是元，只有展示层换算。
+ *
+ * 用户面板里的余额、消耗、单价一律显示积分 —— 线上就是这么给用户看的，
+ * 元金额对按量计费来说太小（一次调用几分钱），积分读起来直观得多。
+ * 控制台那边另外用 formatCurrency，两边的口径统一等接上真实数据时再说。
+ */
+export const POINTS_PER_YUAN = 10000;
+
+/** 预算周期标签 */
+export const BUDGET_PERIOD_LABEL: Record<string, string> = {
+  day: "每日",
+  week: "每周",
+  month: "每月",
+};
+
+/** 元 → 积分字符串（千分位）。小数保留到 8 位，覆盖后端 DECIMAL(14,8)，免得小额被抹成 0 */
+export function formatPoints(yuan: number) {
+  if (!Number.isFinite(yuan)) return "0";
+  const points = yuan * POINTS_PER_YUAN;
+  if (points === 0) return "0";
+  // ×1e4 再取整：消除 0.1+0.2 那类浮点噪声
+  const clean = Math.round(points * 1e4) / 1e4;
+  return clean.toLocaleString("en-US", { maximumFractionDigits: 8 });
+}
+
+/** 元金额，不换算成积分。预算限额这类整钱用得多 */
+export function formatYuan(value: number) {
+  if (!Number.isFinite(value)) return "¥0";
+  return `¥${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
+/** Token 大数：≥100 万按 M、≥1000 按 K，再小的原样 */
+export function formatTokens(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return String(value);
+}
+
+/** 0~1 转百分比（0.9756 → 97.6%） */
+export function formatPercent(value: number) {
+  if (!Number.isFinite(value)) return "-";
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+/** 耗时：超过 1 秒的按秒（1 位小数），其余按毫秒 */
+export function formatLatency(ms: number) {
+  if (!Number.isFinite(ms)) return "-";
+  return ms > 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
+}
+
+/** 是否已过期。没给时间就当不过期 */
+export function isExpired(value: string | Date | null | undefined) {
+  const date = toDate(value);
+  return date !== null && date.getTime() < Date.now();
+}
