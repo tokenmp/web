@@ -15,7 +15,8 @@ sudo docker compose down -v    # 停库并清空数据
 ```
 
 首次启动会按文件名顺序执行 [db/init](db/init) 下的脚本建表：`01-schema.sql` 是用户表，
-`02-system.sql` 是版本、公告、通知，末尾附带几条种子数据。
+`02-system.sql` 是版本、公告、通知，`03-business.sql` 是余额账本、密钥、套餐与订阅，
+两个脚本末尾各带几条种子数据。
 
 > `docker compose up` 每次都会重跑这些脚本，所以里面的 `INSERT` 都带 `WHERE NOT EXISTS`。
 
@@ -57,6 +58,29 @@ bun run dev
 | 局域网其他设备 | `http://<本机局域网 IP>:6789` |
 
 新增或删除 `src/routes/` 下的文件后要重启开发服务器。文件监听会刷新页面，但不会重新生成路由表。
+
+### 验证接口
+
+会话是无状态 JWT，所以验证接口时不用走登录流程，也不用去猜库里那几个管理员账号的密码。
+[scripts/dev-token.ts](scripts/dev-token.ts) 按 `SESSION_SECRET` 签一个管理员会话：
+
+```bash
+bun scripts/dev-token.ts          # 挑一个可用的管理员
+bun scripts/dev-token.ts 319      # 指定用户 id
+bun scripts/dev-token.ts --curl   # 顺带打印一条 curl 命令
+```
+
+更省事的做法是不起服务器，直接把 handler 拿来调，给一个带 cookie 的 `Request` 就行：
+
+```ts
+const request = new Request("http://localhost:6789/api/admin/users", {
+  headers: { cookie: `tokenmp_session=${token}` },
+});
+const res = await GET({ request } as never);
+```
+
+这样不会和别的进程抢 6789 端口，也不用每加一个路由就重启一次。脚本结尾要写 `process.exit(0)`，
+否则 `db` 的连接池会让进程一直挂着。目前没有测试框架，接口靠这类脚本加 `bun run build` 把关。
 
 装依赖走本机的 mihomo 代理会快很多，直连 `registry.npmjs.org` 只有百来 KB/s。
 
@@ -131,8 +155,65 @@ bun run start     # 运行生产构建
 - 公告管理页的列表把草稿和归档的也算上，筛选在本地做（一次请求拿回整份列表）。
   行内一个按钮兼顾发布与归档：草稿和归档过的点「发布」，已发布的点「归档」。
 
-通知的管理端（给指定用户发通知）没做界面：接口要 `user_id`，而用户列表页现在还是示例数据，
-没有能拿到真实 id 的接口。等用户端接上真实数据再补。
+通知的管理端（给指定用户发通知）没做界面：接口要 `user_id`，虽然用户列表接口已经有了，
+但页面还是示例数据，界面上拿不到真实 id。等用户列表页接上真实数据再补。
+
+## 业务接口
+
+用户管理、余额账本、API 密钥、套餐与订阅四组接口已落地，字段与线上一致。
+本机跟线上的差异与本机自己加的字段，都记在 [openapi.yaml](openapi.yaml) 的「两处差异」
+与「本机扩展」两节里，不在代码里另找。
+
+建表在 [03-business.sql](db/init/03-business.sql)：`users` 加了 `balance` 与 `credit_used` 两列，
+另建 `user_budgets`、`api_keys`、`credit_transactions`、`plans`、`plan_prices`、`subscriptions`
+六张表，种子里有五档套餐。
+
+| 组 | 接口 |
+| --- | --- |
+| 用户管理 | `/api/admin/users` 增删改查、`/api/admin/users/{id}/budget` 预算封顶 |
+| 余额账本 | `/api/admin/balances/adjust` 调账与代充、`/api/admin/adjust-logs`、`/api/user/credits`、`/api/user/me` |
+| API 密钥 | `/api/user/api_keys` 自助三支，`/api/admin/users/{id}/api_keys` 与 `/api/admin/api_keys/{id}` 管理端 |
+| 套餐与订阅 | `/api/admin/plans` 与 `/api/admin/plan_prices/{id}` 定价，`/api/admin/plan-activations*` 激活统计，`/api/user/plans` 与订阅 |
+
+充值走管理员代充，就是调账接口带 `source: "recharge"`，没有自助支付渠道。
+
+### 账本口径
+
+账户上有三个量，语义与 openapi 对齐：
+
+```
+已用信用 = credit_limit - credit_available
+可用额度 = balance + credit_available
+```
+
+`credit_available` 不落库，每次由 `credit_limit` 与 `credit_used` 现算，免得三个数各写各的。
+记账只有一处实现（[src/lib/ledger.ts](src/lib/ledger.ts)），调账、代充、订阅、
+将来转发侧的用量扣费都走它：
+
+- 入账（正数）先冲抵已用的信用额度，剩下的才进余额。
+- 扣款（负数）先扣余额，不够再占信用额度。
+- 调账允许透支，管理动作不该被余额拦住；订阅用同一套逻辑但不允许，不够就回 402。
+
+整个动作在一个事务里，先 `SELECT ... FOR UPDATE` 锁住用户行，两个人同时给一个用户调账
+不会丢更新。订阅在同一个事务里做完扣款、写订阅、改 `plan_id` 三件事。
+
+### 几个取舍
+
+密钥只存 sha256，明文只在签发那一次返回，之后只能看前缀和末 6 位。
+
+没给密码建号时用随机串的哈希占位，账号立起来但登录不了；管理员之后改密码时会同时把
+`token_version` 加一，已经签发的会话当场失效。
+
+管理端接口的鉴权用 [api-auth.ts](src/lib/api-auth.ts) 的 `guardAdmin`：未登录回 401、
+非管理员回 403。早先的公告与通知路由用的是 `requireAdmin`，两种情况都回 403，还没改过来。
+
+续费就是再订一次：再扣一次钱，多一行订阅记录，老的那行留着当历史。
+当前订阅取「`active` 且 `period_end` 最晚」那条；提前续费时两行都是 `active`，
+两份额度怎么合并扣减属于转发侧的事，这次没做。
+
+这四组接口还没接前端页面。`/dashboard` 下的用户、余额、密钥、套餐四页与 `/panel` 下的
+密钥、积分、套餐、个人中心四页仍是示例数据（[src/lib/panel-data.ts](src/lib/panel-data.ts)），
+接口已经就绪，把数据源换成 `fetch` 即可。
 
 ## 接口文档
 

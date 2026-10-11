@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 
 import { readSessionCookie, verifySession } from "./auth";
 import { db } from "./db";
+import { errorJson } from "./http";
 import { users, type UserRow } from "./schema";
 
 /**
@@ -30,4 +31,29 @@ export async function requireAdmin(request: Request): Promise<UserRow | null> {
   const user = await requireUser(request);
   if (!user || user.role !== "admin") return null;
   return user;
+}
+
+/**
+ * 管理端接口的开场判断，把两种失败分开回。
+ *
+ * openapi 对管理端定义了两个状态码：401 未登录、403 登录了但没权限。
+ * 用 requireAdmin 的话两种情况只能都回 403，前端没法靠状态码决定是弹登录还是提示无权，
+ * 所以新写的路由用这个。返回 {user} 或者 {error: Response}，调用方直接 return 那个响应。
+ *
+ *   const guard = await guardAdmin(request);
+ *   if ("error" in guard) return guard.error;
+ *   const admin = guard.user;
+ */
+export async function guardAdmin(request: Request): Promise<{ user: UserRow } | { error: Response }> {
+  const user = await requireUser(request);
+  if (!user) return { error: errorJson("请先登录", 401) };
+  if (user.role !== "admin") return { error: errorJson("需要管理员权限", 403) };
+  return { user };
+}
+
+/** 用户端接口的开场判断，只分登录与否 */
+export async function guardUser(request: Request): Promise<{ user: UserRow } | { error: Response }> {
+  const user = await requireUser(request);
+  if (!user) return { error: errorJson("请先登录", 401) };
+  return { user };
 }
