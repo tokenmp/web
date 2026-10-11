@@ -4,8 +4,10 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "start": "node .output/server/index.mjs",
-    "preview": "vite preview"
+    "prestart": "bun scripts/check-env.ts",
+    "start": "node --env-file-if-exists=.env .output/server/index.mjs",
+    "preview": "vite preview",
+    "test": "bun test"
   },
   "dependencies": {
     "@kobalte/core": "^0.13.14",
@@ -29,6 +31,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "playwright": "^1.64.0",
     "tailwindcss": "^4.3.3"
   }
 }

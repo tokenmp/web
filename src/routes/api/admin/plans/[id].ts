@@ -2,6 +2,7 @@ import type { APIEvent } from "@solidjs/start/server";
 import { asc, eq, ne, and } from "drizzle-orm";
 
 import { guardAdmin } from "~/lib/api-auth";
+import { duplicateMessageFor } from "~/lib/db-error";
 import { db } from "~/lib/db";
 import { errorJson, json } from "~/lib/http";
 import { plans, planPrices } from "~/lib/schema";
@@ -9,7 +10,9 @@ import { parsePlanInput, planCore, planPriceRow } from "../plans";
 
 function parseId(raw: string | undefined) {
   const id = Number(raw);
-  return Number.isFinite(id) && id > 0 ? id : null;
+  // 必须是整数：1.5 以前算合法 id 然后查不到，回了 404；
+  // openapi 把非整数归 400，两者要分得开
+  return Number.isInteger(id) && id > 0 ? id : null;
 }
 
 /** GET /api/admin/plans/{id} — 套餐本体与它名下全部模型价 */
@@ -68,10 +71,17 @@ export async function PUT({ request, params }: APIEvent) {
     .limit(1);
   if (duplicate) return errorJson("套餐名已存在", 409);
 
-  await db
-    .update(plans)
-    .set({ ...parsed.value, updatedAt: new Date() })
-    .where(eq(plans.id, id));
+  try {
+    await db
+      .update(plans)
+      .set({ ...parsed.value, updatedAt: new Date() })
+      .where(eq(plans.id, id));
+  } catch (err) {
+    // 并发下重名预检查会放过，真撞上唯一键要回 409
+    const dup = duplicateMessageFor(err, {}, "套餐名已存在");
+    if (dup) return errorJson(dup, 409);
+    throw err;
+  }
 
   return json({ ok: true });
 }

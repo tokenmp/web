@@ -6,6 +6,7 @@ import { db } from "~/lib/db";
 import { errorJson, json, num } from "~/lib/http";
 import { decimal8 } from "~/lib/ledger";
 import { userBudgets, users } from "~/lib/schema";
+import { checkMoney } from "~/lib/validate";
 
 const PERIODS = ["day", "week", "month"] as const;
 type BudgetPeriod = (typeof PERIODS)[number];
@@ -95,8 +96,12 @@ export async function PUT({ request, params }: APIEvent) {
 
   let amount: number | undefined;
   if (body?.amount !== undefined && body?.amount !== null) {
-    amount = Number(body.amount);
-    if (!Number.isFinite(amount) || amount < 0) {
+    // 只认数字，且要在 DECIMAL(14,8) 能表示的范围内，否则 MySQL 会报范围错
+    if (typeof body.amount !== "number") return errorJson("预算金额必须是数字", 400);
+    const problem = checkMoney(body.amount, "预算金额");
+    if (problem) return errorJson(problem, 400);
+    amount = body.amount;
+    if (amount < 0) {
       return errorJson("预算金额必须是不小于 0 的数字", 400);
     }
   }
