@@ -9,7 +9,7 @@ import Search from "lucide-solid/icons/search";
 import Trash from "lucide-solid/icons/trash";
 import UserPlus from "lucide-solid/icons/user-plus";
 import Wallet from "lucide-solid/icons/wallet";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 
 import { PageHeader, StatRow } from "~/components/layout/page-header";
 import { CopyableId } from "~/components/panel/copyable-id";
@@ -117,8 +117,8 @@ function budgetAmountLabel(budget: UserBudget | undefined) {
 /**
  * 控制台用户管理。
  *
- * 列表、关键词、排序、分页都走后端；只有「状态」这一档在本地筛 —— 接口没有 status
- * 参数，所以状态筛选只作用于当前页，界面里也写明了这件事。
+ * 列表、关键词、状态、排序、分页全部走后端：status 参数由服务端拼进 where，
+ * 所以 total 是筛选后的总数，页码条与「用户总数」都对得上。
  *
  * 用户被禁用（软删）之后，行内与详情抽屉里都会换成「启用」，这是 issue 点名的恢复入口。
  * 密钥明文只在签发那一次出现，关掉弹窗列表里就只剩前后缀。
@@ -143,6 +143,8 @@ export default function DashboardUsers() {
         page: page(),
         size: size(),
         keyword: keyword(),
+        // 「全部」就是不传，服务端当不过滤；1/0 直接交给服务端筛
+        status: status() === "all" ? undefined : (Number(status()) as 0 | 1),
         sort: sort(),
         order: order(),
       }),
@@ -168,6 +170,7 @@ export default function DashboardUsers() {
     page();
     size();
     keyword();
+    status();
     sort();
     order();
     if (!primed) {
@@ -177,19 +180,22 @@ export default function DashboardUsers() {
     void users.reload();
   });
 
-  const filtered = createMemo(() => {
-    const list = users.data().items;
-    if (status() === "all") return list;
-    return list.filter(user => String(user.status) === status());
-  });
-
+  /** 状态筛选走后端，本页就只统计当前这一页的构成 */
   const stats = () => {
     const list = users.data().items;
+    const active = status();
     return [
       {
         label: "用户总数",
         value: formatNumber(users.data().total),
-        hint: keyword() ? "符合当前关键词" : "全部账号",
+        hint:
+          active === "all"
+            ? keyword()
+              ? "符合当前关键词"
+              : "全部账号"
+            : active === "1"
+              ? "仅正常账号"
+              : "仅已封禁账号",
       },
       { label: "本页正常", value: formatNumber(list.filter(user => user.status === 1).length) },
       { label: "本页已封禁", value: formatNumber(list.filter(user => user.status === 0).length) },
@@ -260,7 +266,11 @@ export default function DashboardUsers() {
           <Segmented
             options={STATUS_TABS}
             value={status()}
-            onChange={setStatus}
+            onChange={value => {
+              setStatus(value);
+              // 筛选条件变了，旧的页码未必还存在，回到第一页
+              setPage(1);
+            }}
             ariaLabel="按用户状态筛选"
           />
 
@@ -298,12 +308,6 @@ export default function DashboardUsers() {
           </div>
         </div>
 
-        <Show when={status() !== "all"}>
-          <p class="border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-            状态筛选只作用于当前页；关键词与排序是后端筛的。
-          </p>
-        </Show>
-
         <Show when={notice()}>
           <p
             class="border-b bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text"
@@ -336,7 +340,7 @@ export default function DashboardUsers() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            <For each={filtered()}>
+            <For each={users.data().items}>
               {user => (
                 <TableRow>
                   <TableCell>
@@ -404,13 +408,13 @@ export default function DashboardUsers() {
               )}
             </For>
 
-            <Show when={filtered().length === 0}>
+            <Show when={users.data().items.length === 0}>
               <TableRow>
                 <TableCell class="py-10 text-center text-muted-foreground" colSpan={8}>
                   {users.loading()
                     ? "正在加载…"
                     : status() !== "all"
-                      ? "当前页没有这个状态的用户，翻页或切回「全部」看看"
+                      ? "没有这个状态的用户，切回「全部」看看"
                       : keyword()
                         ? "没有匹配的用户，换个用户名或邮箱关键词试试"
                         : "还没有用户，点右上角「新增用户」建一个"}

@@ -2,6 +2,7 @@ import { Title } from "@solidjs/meta";
 import CircleCheck from "lucide-solid/icons/circle-check";
 import Pencil from "lucide-solid/icons/pencil";
 import Plus from "lucide-solid/icons/plus";
+import RotateCcw from "lucide-solid/icons/rotate-ccw";
 import Trash from "lucide-solid/icons/trash";
 import Users from "lucide-solid/icons/users";
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
@@ -52,6 +53,7 @@ import {
   PRICING_MODE_OPTIONS,
   QUOTA_KIND_LABELS,
   QUOTA_KIND_OPTIONS,
+  restorePlan,
   type ActivationExpire,
   type OverageMode,
   type Plan,
@@ -89,8 +91,8 @@ const HERO_FEATURES = [
  * 卡片是销售页的样子，读的是 /api/admin/plans，不再是写死的四档。
  * 数据分三块：套餐列表（含「含已停用」开关）、四个概览数字、订阅激活列表。
  *
- * 「停用」是软删（status=0），默认列表看不到，切「含已停用」才现身。
- * 后端没有「启用」接口，所以已停用的卡只有详情与编辑两个动作。
+ * 「停用」是软删（status=0），默认列表看不到，切「含已停用」才现身；
+ * 已停用的卡片给「恢复」按钮，调 POST /api/admin/plans/{id}/enable 把它置回在售。
  */
 export default function DashboardPlans() {
   const [includeDeleted, setIncludeDeleted] = createSignal(false);
@@ -114,6 +116,8 @@ export default function DashboardPlans() {
   const [editing, setEditing] = createSignal<Plan | null>(null);
   const [pendingDisable, setPendingDisable] = createSignal<Plan | null>(null);
   const [disablePending, setDisablePending] = createSignal(false);
+  const [pendingRestore, setPendingRestore] = createSignal<Plan | null>(null);
+  const [restorePending, setRestorePending] = createSignal(false);
 
   const [detailOpen, setDetailOpen] = createSignal(false);
   const [detailId, setDetailId] = createSignal<number | null>(null);
@@ -158,6 +162,23 @@ export default function DashboardPlans() {
       setNotice(err instanceof Error ? err.message : "停用失败");
     } finally {
       setDisablePending(false);
+    }
+  };
+
+  // 恢复也走二次确认，与停用对称；恢复不涉及破坏性操作，确认文案写清后果即可
+  const confirmRestore = async () => {
+    const plan = pendingRestore();
+    if (!plan || restorePending()) return;
+    setRestorePending(true);
+    setNotice("");
+    try {
+      await restorePlan(plan.id);
+      setPendingRestore(null);
+      refreshAll();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "恢复失败");
+    } finally {
+      setRestorePending(false);
     }
   };
 
@@ -264,6 +285,7 @@ export default function DashboardPlans() {
                 onDetail={() => openDetail(plan)}
                 onEdit={() => openForm(plan)}
                 onDisable={() => setPendingDisable(plan)}
+                onRestore={() => setPendingRestore(plan)}
               />
             )}
           </For>
@@ -437,7 +459,7 @@ export default function DashboardPlans() {
           if (!open) setPendingDisable(null);
         }}
         title="停用这个套餐？"
-        description="停用是软删：套餐从默认列表里消失，名字仍被占用（再建同名会 409），名下的模型价会被直接删掉。已经订阅的用户不受影响。后端没有「启用」接口，界面上恢复不了。"
+        description="停用是软删：套餐从默认列表里消失，名字仍被占用（再建同名会 409），名下的模型价会被直接删掉。已经订阅的用户不受影响。停用后可以在同一张卡上「恢复」。"
         footer={
           <>
             <Button variant="outline" onClick={() => setPendingDisable(null)}>
@@ -453,6 +475,25 @@ export default function DashboardPlans() {
           </>
         }
       />
+
+      <Dialog
+        open={pendingRestore() !== null}
+        onOpenChange={open => {
+          if (!open) setPendingRestore(null);
+        }}
+        title="恢复这个套餐？"
+        description="恢复后套餐回到默认列表并重新在售（status 置回 1）。停用时被删掉的模型价不会自动回来，需要到「详情」里重新加。"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setPendingRestore(null)}>
+              取消
+            </Button>
+            <Button disabled={restorePending()} onClick={() => void confirmRestore()}>
+              {restorePending() ? "恢复中…" : "恢复"}
+            </Button>
+          </>
+        }
+      />
     </>
   );
 }
@@ -464,6 +505,7 @@ function PlanCard(props: {
   onDetail: () => void;
   onEdit: () => void;
   onDisable: () => void;
+  onRestore: () => void;
 }) {
   const plan = () => props.plan;
 
@@ -535,6 +577,12 @@ function PlanCard(props: {
             >
               <Trash class="size-3.5" aria-hidden="true" />
               停用
+            </Button>
+          </Show>
+          <Show when={plan().status === 0}>
+            <Button variant="outline" size="sm" class="flex-1" onClick={() => props.onRestore()}>
+              <RotateCcw class="size-3.5" aria-hidden="true" />
+              恢复
             </Button>
           </Show>
         </div>

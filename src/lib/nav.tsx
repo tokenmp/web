@@ -1,5 +1,6 @@
 import Bell from "lucide-solid/icons/bell";
 import ClipboardCheck from "lucide-solid/icons/clipboard-check";
+import CreditCard from "lucide-solid/icons/credit-card";
 import KeyRound from "lucide-solid/icons/key-round";
 import LayoutDashboard from "lucide-solid/icons/layout-dashboard";
 import Layers from "lucide-solid/icons/layers";
@@ -35,6 +36,7 @@ export const dashboardNav: NavItem[] = [
     primary: true,
     icon: () => <Wallet class="size-4" />,
   },
+  { href: "/dashboard/recharge", label: "充值", icon: () => <CreditCard class="size-4" /> },
   { href: "/dashboard/api-keys", label: "API 密钥", icon: () => <KeyRound class="size-4" /> },
   { href: "/dashboard/plans", label: "套餐", icon: () => <Package class="size-4" /> },
   {

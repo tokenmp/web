@@ -69,27 +69,32 @@
 
 | 路由 | 页面 | 状态 |
 | --- | --- | --- |
-| `/` | 登录，登录与注册分段切换，密码可见性开关 | 已实现，未接接口 |
-| `/dashboard` | 概览，4 张指标卡、14 天消耗趋势、渠道占比、最近订单 | 已实现，示例数据 |
-| `/dashboard/users` | 用户列表 | 已实现，示例数据 |
-| `/dashboard/balances` | 余额 | 已实现，示例数据 |
-| `/dashboard/api-keys` | API 密钥 | 已实现，示例数据 |
-| `/dashboard/plans` | 套餐 | 已实现，示例数据 |
-| `/dashboard/billing` | 计费 | 已实现，示例数据 |
-| `/dashboard/channels` | 渠道 | 已实现，示例数据 |
-| `/dashboard/channel-groups` | 渠道分组 | 已实现，示例数据 |
-| `/dashboard/channel-applications` | 渠道申请 | 已实现，示例数据 |
-| `/dashboard/announcements` | 公告管理，草稿到发布的流程 | 已实现，接了后端接口 |
-| `/panel` | 用户面板概览，五格指标、近 7 日用量图、当前套餐、最近流水 | 已实现，示例数据 |
-| `/panel/keys` | 我的密钥，新建后明文只弹一次 | 已实现，示例数据 |
-| `/panel/models` | 模型目录与降级链 | 已实现，示例数据 |
-| `/panel/request-records` | 请求日志，带详情抽屉 | 已实现，示例数据 |
-| `/panel/billing` | 账单流水 | 已实现，示例数据 |
-| `/panel/credits` | 余额明细 | 已实现，示例数据 |
-| `/panel/plans` | 套餐与订阅 | 已实现，示例数据 |
-| `/panel/accounts` | 分享的渠道账号 | 已实现，示例数据 |
-| `/panel/channels` | 我的渠道与申请 | 已实现，示例数据 |
-| `/panel/me` | 个人中心，额度、预算与偏好 | 已实现，示例数据 |
+| `/` | 登录，登录与注册分段切换，密码可见性开关 | 已实现，接了认证接口 |
+| `/dashboard` | 概览，指标卡与按天用量趋势 | 已实现，接了接口 |
+| `/dashboard/users` | 用户列表、建号、改号、禁用启用、预算、密钥 | 已实现，接了接口 |
+| `/dashboard/balances` | 余额、调账、代充、批量充值、调账记录 | 已实现，接了接口 |
+| `/dashboard/api-keys` | API 密钥，签发、停用启用、改属性、吊销 | 已实现，接了接口 |
+| `/dashboard/plans` | 套餐、模型价、订阅概览与激活列表 | 已实现，接了接口 |
+| `/dashboard/billing` | 计费流水 | 已实现，接了接口 |
+| `/dashboard/recharge` | 充值单，可筛出未到账与失败的 | 已实现，接了接口 |
+| `/dashboard/notifications` | 通知投递与发送 | 已实现，接了接口 |
+| `/dashboard/channels` | 渠道 | 已实现，等转发侧（接口是 remote） |
+| `/dashboard/channel-groups` | 渠道分组 | 已实现，等转发侧（接口是 remote） |
+| `/dashboard/channel-applications` | 渠道申请 | 已实现，等转发侧（接口是 remote） |
+| `/dashboard/announcements` | 公告管理，草稿到发布的流程 | 已实现，接了接口 |
+| `/panel` | 用户面板概览，五格指标、近 7 日用量图、当前套餐、最近流水 | 已实现，接了接口 |
+| `/panel/keys` | 我的密钥，新建后明文只弹一次 | 已实现，接了接口 |
+| `/panel/models` | 模型目录与降级链 | 已实现，等转发侧（接口是 remote） |
+| `/panel/request-records` | 请求日志，带详情抽屉 | 已实现，等转发侧回写数据 |
+| `/panel/billing` | 账单流水 | 已实现，等转发侧回写数据 |
+| `/panel/credits` | 余额明细 | 已实现，接了接口 |
+| `/panel/plans` | 套餐与订阅、取消订阅 | 已实现，接了接口 |
+| `/panel/accounts` | 分享的渠道账号 | 已实现，等转发侧（接口是 remote） |
+| `/panel/channels` | 我的渠道与申请 | 已实现，等转发侧（接口是 remote） |
+| `/panel/me` | 个人中心，额度、预算、改密码 | 已实现，接了接口 |
+
+还差最后一层的是「等转发侧回写数据」那几页：表、摄入接口、查询与页面都已就绪，
+但 `/api/internal/records` 没有数据源，网关接上之前列表是空的。
 
 ## 组件清单
 

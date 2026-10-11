@@ -136,8 +136,12 @@ function duplicateMessage(err: unknown) {
 /**
  * GET /api/admin/users
  *
- * 查询参数：page、size、keyword（按用户名或邮箱模糊匹配）、sort、order。
+ * 查询参数：page、size、keyword（按用户名或邮箱模糊匹配）、status、sort、order。
+ * status 取 1（正常）或 0（已封禁）；非法值当没给，不过滤、不报错 ——
+ * 跟 sort、order 一个口径，前端多传一个空串不该让整个列表挂掉。
  * order 只有 asc 生效，其余一律降序 —— openapi 就是这么定的。
+ *
+ * 注意 total 是**过滤后**的总数，跟 items 同一套 where，页码条直接拿它算页数。
  */
 export async function GET({ request }: APIEvent) {
   const guard = await guardAdmin(request);
@@ -150,9 +154,16 @@ export async function GET({ request }: APIEvent) {
   const keyword = (url.searchParams.get("keyword") ?? "").trim();
   // 用户名与邮箱都要命中：管理端常常只记得邮箱，只搜用户名等于搜不到
   const pattern = `%${escapeLike(keyword)}%`;
-  const where = keyword
-    ? or(like(users.name, pattern), like(users.email, pattern))
-    : undefined;
+
+  const rawStatus = url.searchParams.get("status");
+  const status = rawStatus === "1" ? 1 : rawStatus === "0" ? 0 : undefined;
+
+  const filters = [
+    keyword ? or(like(users.name, pattern), like(users.email, pattern)) : undefined,
+    status !== undefined ? eq(users.status, status) : undefined,
+  ];
+  // and() 会把 undefined 的项丢掉，两项都没有时回 undefined，正好当「不过滤」
+  const where = and(...filters);
 
   const sort = url.searchParams.get("sort");
   const column =

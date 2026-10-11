@@ -144,6 +144,9 @@ try {
   for (const route of routes) {
     const text = await visit(route);
     check(`${route} 打开后不是空白`, text.length > 40, text.slice(0, 80));
+    // 这一条是为 /panel/me 那个 404 加的：路由被静默丢掉时页面会渲染成 404，
+    // 而 404 页的字数也超过 40，光判「不是空白」抓不到
+    check(`${route} 不是 404 页`, !text.includes("页面不存在"), text.slice(0, 120));
     for (const sentinel of MOCK_SENTINELS[route] ?? []) {
       check(`${route} 不再出现写死的「${sentinel}」`, !text.includes(sentinel));
     }
@@ -172,9 +175,16 @@ try {
   );
 
   console.log("\n【二】新增页面能打开");
-  for (const route of ["/dashboard/notifications", "/panel/request-records", "/panel/billing", "/dashboard/billing"]) {
+  for (const route of [
+    "/dashboard/notifications",
+    "/dashboard/recharge",
+    "/panel/request-records",
+    "/panel/billing",
+    "/dashboard/billing",
+  ]) {
     const text = await visit(route);
     check(`${route} 打开后不是空白`, text.length > 40, text.slice(0, 80));
+    check(`${route} 不是 404 页`, !text.includes("页面不存在"), text.slice(0, 120));
   }
 
   console.log("\n【三】控制台没报错");

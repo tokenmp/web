@@ -13,7 +13,7 @@
  * 少一个后端就会写成列默认值（quota_amount=0、markup_multiplier=1 之类）。
  */
 
-import { deleteOk, getData, getList, postData, putOk, query } from "./api-client";
+import { deleteOk, getData, getList, postData, postOk, putOk, query } from "./api-client";
 import { fitsDecimal, fitsInt32, MONEY, PRICE } from "./validate";
 
 /* ------------------------------------------------------------------ 枚举 */
@@ -244,6 +244,11 @@ export function updatePlan(id: number, input: PlanInput) {
 /** 软删：status 置 0，同时物理删掉名下 plan_prices */
 export function disablePlan(id: number) {
   return deleteOk(`/api/admin/plans/${id}`);
+}
+
+/** 恢复软删：status 置回 1。已经在售时后端也回 200（幂等），前端不必先判状态 */
+export function restorePlan(id: number) {
+  return postOk(`/api/admin/plans/${id}/enable`);
 }
 
 export function createPlanPrice(planId: number, input: PlanPriceInput) {

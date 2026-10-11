@@ -6,22 +6,16 @@
  *
  * 明文密钥只在签发那一次返回（POST 的 data.key），之后库里只有 hash 与前后缀，
  * 任何列表接口都取不回原文，界面必须当场让管理员存下来。
+ *
+ * AdminUser 与 fetchAdminUsers 由 admin-users.ts 定义、这里只转发，
+ * 免得同一份类型与同一个请求在两处各写一遍。
  */
 
-import { deleteOk, getList, patchOk, postData, query } from "./api-client";
+import { deleteOk, getList, patchOk, postData } from "./api-client";
 
-/** 用户列表里页面用得到的字段。其余字段（预算、订阅）这里不声明 */
-export type AdminUser = {
-  id: number;
-  name: string;
-  email: string | null;
-  role: string;
-  /** 1 正常，0 停用 */
-  status: number;
-  credit_limit: number;
-  plan_id: number | null;
-  balance?: number;
-};
+// 用户列表的类型与取数统一由 admin-users.ts 提供，这里只转发出去，
+// api-keys.tsx / notifications.tsx 的 import 路径不用改。
+export { fetchAdminUsers, type AdminUser } from "./admin-users";
 
 export type AdminApiKey = {
   id: number;
@@ -60,17 +54,6 @@ export type ApiKeyPatch = {
 };
 
 export type KeyState = "启用" | "已停用" | "已过期";
-
-/** 用户列表。keyword 只匹配用户名，这是后端定的口径 */
-export function fetchAdminUsers(options: { page?: number; size?: number; keyword?: string } = {}) {
-  return getList<AdminUser>(
-    `/api/admin/users${query({
-      page: options.page,
-      size: options.size ?? 100,
-      keyword: options.keyword,
-    })}`,
-  );
-}
 
 /** 某用户的密钥。用户不存在时后端回空列表，不报 404 */
 export function fetchUserApiKeys(userId: number) {

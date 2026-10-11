@@ -219,12 +219,17 @@ bun run start     # 运行生产构建
 
 | 组 | 接口 |
 | --- | --- |
-| 用户管理 | `/api/admin/users` 增删改查、`/api/admin/users/{id}/budget` 预算封顶 |
-| 余额账本 | `/api/admin/balances/adjust` 调账与代充、`/api/admin/adjust-logs`、`/api/user/credits`、`/api/user/me` |
-| API 密钥 | `/api/user/api_keys` 自助三支，`/api/admin/users/{id}/api_keys` 与 `/api/admin/api_keys/{id}` 管理端 |
-| 套餐与订阅 | `/api/admin/plans` 与 `/api/admin/plan_prices/{id}` 定价，`/api/admin/plan-activations*` 激活统计，`/api/user/plans` 与订阅 |
+| 用户管理 | `/api/admin/users` 增删改查（含按用户名与邮箱搜、按状态筛）、`/api/admin/users/{id}/budget` 预算封顶 |
+| 余额账本 | `/api/admin/balances/adjust` 调账与代充、`/api/admin/balances/batch-adjust` 批量（一个事务）、`/api/admin/adjust-logs`、`/api/user/credits`、`/api/user/me` |
+| API 密钥 | `/api/user/api_keys` 自助四支，`/api/admin/users/{id}/api_keys` 与 `/api/admin/api_keys/{id}` 管理端；含停用启用与属性编辑 |
+| 套餐与订阅 | `/api/admin/plans` 与 `/api/admin/plan_prices/{id}` 定价、`/api/admin/plans/{id}/enable` 恢复、`/api/admin/plan-activations*` 激活统计；`/api/user/plans`、订阅、`/api/user/plans/cancel`、`/api/admin/users/{id}/subscription` 退订退款 |
+| 充值 | `/api/user/recharge` 下单与我的充值单、`/api/admin/recharge` 管理端列表、`/api/internal/recharge-callback` 渠道回调（按 order_no 幂等） |
+| 用量与账单 | `/api/user/{usage,request-records,billing-records}`、`/api/admin/{request-records,billing-records,dashboard}`、`/api/internal/records` 网关回写（按 request_id 幂等） |
+| 认证 | `/api/auth/{login,register,logout,me,password}` |
 
-充值走管理员代充，就是调账接口带 `source: "recharge"`，没有自助支付渠道。
+充值走管理员代充，就是调账接口带 `source: "recharge"`。用户也能自助下单
+（`/api/user/recharge`），但目前接的是模拟渠道，入账要等回调，真接渠道只需换回调来源与验签。
+生产必须配 `RECHARGE_CALLBACK_SECRET`，启动前的检查会拦。
 
 ### 账本口径
 
@@ -260,12 +265,12 @@ bun run start     # 运行生产构建
 当前订阅取「`active` 且 `period_end` 最晚」那条；提前续费时两行都是 `active`，
 两份额度怎么合并扣减属于转发侧的事，这次没做。
 
-这四组接口还没接前端页面。接口已就绪但页面仍读示例数据的有八页：`/dashboard` 下的用户、
-余额、密钥、套餐四页与 `/panel` 下的密钥、积分、套餐、个人中心四页，把数据源换成 `fetch` 即可。
+页面已经接上。除了依赖转发侧的那几页，控制台与用户面板的业务页都读真实接口了。
+逐页状态见 [DESIGN.md](DESIGN.md) 的页面表。
 
-另有十一页连后端都没有，它们依赖的 71 个端点在 openapi.yaml 里标的是 `remote`（渠道、计费、
-模型目录、共享账号、平台设置等），要先等转发侧或本机补齐实现。逐条清单与依据见
-[功能缺口清单](docs/gaps.md)。
+仍然读示例数据的是依赖 `remote` 接口的六页：控制台的渠道、渠道分组、渠道申请，
+用户面板的模型目录、账号、渠道。另外用量、请求记录、账单三处的表、摄入接口与页面都已就绪，
+但数据源在转发内核，网关回写前列表是空的。逐条清单与依据见 [功能缺口清单](docs/gaps.md)。
 
 ## 接口文档
 

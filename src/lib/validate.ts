@@ -45,6 +45,14 @@ export function checkMoney(value: unknown, label: string, spec: { precision: num
   return null;
 }
 
+/**
+ * 批量记账单次上限。
+ *
+ * 前后端共用同一个常量：后端用它拦请求，前端用它决定分批。
+ * 两处各写一个 200 是迟早会对不上的。
+ */
+export const BATCH_ADJUST_LIMIT = 200;
+
 /** 校验一个 int32 字段 */
 export function checkInt32(value: unknown, label: string): string | null {
   if (typeof value !== "number" || !Number.isFinite(value)) return `${label}必须是数字`;

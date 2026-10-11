@@ -1382,6 +1382,58 @@ paths:
                       skipped: { type: integer }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /admin/recharge:
+    get:
+      operationId: getAdminRechargeOrders
+      tags: [Balances]
+      summary: 充值单列表
+      description: |
+        本机新增。给运营看谁充了多少、哪一单还挂着、哪一单回调失败。
+        注意它与「计费流水」不是一回事：那边是调用扣费，这边是充值单。
+        `credit_transaction_id` 为空表示这单还没入账。
+      x-implemented: local
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: user_id
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, paid, failed, cancelled, refunded] }
+        - name: channel
+          in: query
+          schema: { type: string }
+        - name: start
+          in: query
+          schema: { type: string, format: date-time }
+          description: 闭区间；非法值静默忽略
+        - name: end
+          in: query
+          schema: { type: string, format: date-time }
+          description: 闭区间；非法值静默忽略
+      responses:
+        "200":
+          description: 一页充值单，按创建时间倒序
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          allOf:
+                            - $ref: "#/components/schemas/RechargeOrder"
+                            - type: object
+                              properties:
+                                user_name: { type: [string, "null"] }
+                                user_email: { type: [string, "null"] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /admin/dashboard:
     get:
       operationId: getAdminDashboard
@@ -1654,6 +1706,10 @@ paths:
           in: query
           schema: { type: string }
           description: 按用户名或邮箱模糊匹配（本机把邮箱也纳入匹配）
+        - name: status
+          in: query
+          schema: { type: string, enum: ["0", "1"] }
+          description: 按状态筛（1 正常、0 停用）。本机新增；非法值静默忽略
         - name: sort
           in: query
           schema: { type: string, enum: [credit_limit, created_at, updated_at, name] }
@@ -2039,6 +2095,62 @@ paths:
                         type: array
                         items: { $ref: "#/components/schemas/AdjustLogItem" }
 
+  /admin/balances/batch-adjust:
+    post:
+      operationId: postAdminBalancesBatchAdjust
+      tags: [Balances]
+      summary: 批量调账
+      description: |
+        本机新增。一个事务里全部成功或全部回滚，任何一条不合法就整个请求失败并指出是第几条。
+        单次上限 200 条（前后端共用 `BATCH_ADJUST_LIMIT`）。
+        记账走与单笔相同的口径，所以入账仍会先冲抵已用的信用额度。
+      x-implemented: local
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items:
+                    type: object
+                    required: [user_id, amount, reason]
+                    properties:
+                      user_id: { type: integer, format: int64 }
+                      amount: { type: number, description: 正数入账、负数扣款 }
+                      reason: { type: string, maxLength: 256 }
+                      source: { type: string, enum: [adjust, recharge], default: adjust }
+      responses:
+        "200":
+          description: 全部入账
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          items:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                user_id: { type: integer, format: int64 }
+                                balance_after: { type: number }
+                                ref: { type: string }
+                          count: { type: integer }
+                          total_amount: { type: number }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /admin/plans:
     get:
       operationId: getAdminPlans
@@ -2167,6 +2279,32 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/OkEnvelope" }
         "400": { $ref: "#/components/responses/BadRequest" }
+
+  /admin/plans/{id}/enable:
+    post:
+      operationId: postAdminPlansIdEnable
+      tags: [Plans]
+      summary: 恢复已停用的套餐
+      description: |
+        本机新增。套餐删是软删（status=0），这个动作把它改回 1。
+        与 `DELETE` 对称，独立动作而不塞进整体替换的 PUT。
+        已经是启用状态时也回 200（幂等，重复点不报错）。
+      x-implemented: local
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: 已恢复（或本来就是启用状态）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: 套餐名被别的套餐占用（唯一索引冲突）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
 
   /admin/plans/{id}/prices:
     post:
