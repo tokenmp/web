@@ -59,9 +59,41 @@ bun run dev
 
 新增或删除 `src/routes/` 下的文件后要重启开发服务器。文件监听会刷新页面，但不会重新生成路由表。
 
-### 验证接口
+### 测试
 
-会话是无状态 JWT，所以验证接口时不用走登录流程，也不用去猜库里那几个管理员账号的密码。
+用 `bun test`，没引额外框架。三层，各有各的用处：
+
+| 文件 | 打什么 | 跑法 |
+| --- | --- | --- |
+| [tests/api.test.ts](tests/api.test.ts) | 直接调路由的 handler，不经过 HTTP | `bun test` |
+| [tests/deploy-flow.ts](tests/deploy-flow.ts) | 跑起来的生产构建，走真实注册、登录与 cookie | 见下 |
+| [tests/ui-flow.ts](tests/ui-flow.ts) | 真浏览器，测点开又取消、切来切去 | 见下 |
+| [tests/deploy-mutations.ts](tests/deploy-mutations.ts) | 变异输入：类型错位、边界值、注入、越权、并发、中断 | 见下 |
+
+后三个要先起服务：
+
+```bash
+bun run build
+bun run start &
+
+bun tests/deploy-flow.ts      # 46 项，整套业务链路
+bun tests/ui-flow.ts          # 31 项，浏览器交互
+bun tests/deploy-mutations.ts # 248 项变异
+```
+
+四个都需要本地库在跑。每个用例自己建测试数据，命名带时间戳，跑完只删自己的，
+可以反复跑。
+
+为什么分四层：handler 级快、失败信息干净，但绕过 HTTP 与 `.env` 加载，
+上面那个「生产环境必须设置 SESSION_SECRET」就是部署层才暴露的；
+HTTP 级能盖住中间件与序列化；UI 级才能回答「点了取消有没有偷偷发请求」；
+变异级拿异常输入敲边界，目前发现的溢出、类型强转、唯一键并发冲突都是它提的。
+
+tests/ui-flow.ts 用 Playwright（devDependency），浏览器已缓存在 `~/.cache/ms-playwright`。
+
+### 不起服务器调接口
+
+会话是无状态 JWT，所以调单个接口时不用走登录流程，也不用去猜库里那几个管理员账号的密码。
 [scripts/dev-token.ts](scripts/dev-token.ts) 按 `SESSION_SECRET` 签一个管理员会话：
 
 ```bash
@@ -70,7 +102,7 @@ bun scripts/dev-token.ts 319      # 指定用户 id
 bun scripts/dev-token.ts --curl   # 顺带打印一条 curl 命令
 ```
 
-更省事的做法是不起服务器，直接把 handler 拿来调，给一个带 cookie 的 `Request` 就行：
+或者在测试里直接把 handler 拿来调，给一个带 cookie 的 `Request` 就行：
 
 ```ts
 const request = new Request("http://localhost:6789/api/admin/users", {
@@ -79,8 +111,8 @@ const request = new Request("http://localhost:6789/api/admin/users", {
 const res = await GET({ request } as never);
 ```
 
-这样不会和别的进程抢 6789 端口，也不用每加一个路由就重启一次。脚本结尾要写 `process.exit(0)`，
-否则 `db` 的连接池会让进程一直挂着。目前没有测试框架，接口靠这类脚本加 `bun run build` 把关。
+这样不用一个用例起一次服务器，也不会和别的进程抢 6789。脚本结尾要写 `process.exit(0)`，
+否则 `db` 的连接池会让进程一直挂着。
 
 装依赖走本机的 mihomo 代理会快很多，直连 `registry.npmjs.org` 只有百来 KB/s。
 
@@ -94,6 +126,15 @@ with-proxy bun install
 bun run build     # 产出到 .output
 bun run start     # 运行生产构建
 ```
+
+`start` 前面会自动跑 `prestart`，也就是 [scripts/check-env.ts](scripts/check-env.ts)：
+先查 `SESSION_SECRET`、`DATABASE_URL`、数据库能不能连上、建表脚本跑过没有，
+缺什么就当场退出并说清楚。这一道是补上来的 —— 之前用 `NODE_ENV=production` 起服务时，
+进程正常监听、日志里一句提示都没有，直到有人点登录才 500，报「生产环境必须设置 SESSION_SECRET」。
+根因是 node 不读 `.env`，所以启动命令里带了 `--env-file-if-exists=.env`（文件不存在也不报错，
+适合用 systemd 或容器注入环境变量的场合）。
+
+生产上至少要把 `SESSION_SECRET` 换掉，`.env.example` 里有说明。
 
 ## 系统级的版本、公告、通知
 
@@ -211,9 +252,12 @@ bun run start     # 运行生产构建
 当前订阅取「`active` 且 `period_end` 最晚」那条；提前续费时两行都是 `active`，
 两份额度怎么合并扣减属于转发侧的事，这次没做。
 
-这四组接口还没接前端页面。`/dashboard` 下的用户、余额、密钥、套餐四页与 `/panel` 下的
-密钥、积分、套餐、个人中心四页仍是示例数据（[src/lib/panel-data.ts](src/lib/panel-data.ts)），
-接口已经就绪，把数据源换成 `fetch` 即可。
+这四组接口还没接前端页面。接口已就绪但页面仍读示例数据的有八页：`/dashboard` 下的用户、
+余额、密钥、套餐四页与 `/panel` 下的密钥、积分、套餐、个人中心四页，把数据源换成 `fetch` 即可。
+
+另有十一页连后端都没有，它们依赖的 71 个端点在 openapi.yaml 里标的是 `remote`（渠道、计费、
+模型目录、共享账号、平台设置等），要先等转发侧或本机补齐实现。逐条清单与依据见
+[功能缺口清单](docs/gaps.md)。
 
 ## 接口文档
 

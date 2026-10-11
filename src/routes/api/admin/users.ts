@@ -3,9 +3,11 @@ import { and, asc, count, desc, eq, inArray, like } from "drizzle-orm";
 
 import { guardAdmin } from "~/lib/api-auth";
 import { hashPassword } from "~/lib/auth";
+import { duplicateMessageFor } from "~/lib/db-error";
 import { db } from "~/lib/db";
 import { errorJson, json, num, parsePaging } from "~/lib/http";
 import { decimal8 } from "~/lib/ledger";
+import { checkMoney, checkText } from "~/lib/validate";
 import {
   subscriptions,
   userBudgets,
@@ -121,11 +123,14 @@ function placeholderSecret() {
   return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** 用户名与邮箱上都有唯一索引，并发下预检查可能同时通过，这里把数据库的报错翻成同一句话 */
+/**
+ * 用户名与邮箱上都有唯一索引，并发下预检查可能同时通过。
+ *
+ * 错误要交给 db-error 去解：drizzle 把驱动错误包了一层，
+ * 外层 err.code 永远是 undefined，直接判 ER_DUP_ENTRY 会永远判不出来，于是回 500。
+ */
 function duplicateMessage(err: unknown) {
-  const e = err as { code?: string; message?: string } | null;
-  if (e?.code !== "ER_DUP_ENTRY") return null;
-  return e.message?.includes("uk_users_email") ? "邮箱已存在" : "用户名已存在";
+  return duplicateMessageFor(err, { uk_users_email: "邮箱已存在" }, "用户名已存在");
 }
 
 /**
@@ -190,28 +195,33 @@ export async function POST({ request }: APIEvent) {
     return errorJson("请求体不是合法 JSON", 400);
   }
 
-  const name = String(body?.name ?? "").trim();
-  if (!name || name.length > 64) return errorJson("用户名长度需在 1 到 64 个字符之间", 400);
+  // 只认字符串。之前用 String(body?.name ?? "") 强转，传 {} 会建出一个叫 [object Object] 的账号
+  const nameProblem = checkText(body?.name, "用户名", 64);
+  if (nameProblem) return errorJson(nameProblem, 400);
+  const name = (body?.name as string).trim();
 
   let creditLimit = 0;
   if (body?.credit_limit !== undefined && body?.credit_limit !== null) {
-    creditLimit = Number(body.credit_limit);
-    if (!Number.isFinite(creditLimit) || creditLimit < 0) {
-      return errorJson("信用额度必须是不小于 0 的数字", 400);
-    }
+    if (typeof body.credit_limit !== "number") return errorJson("信用额度必须是数字", 400);
+    const problem = checkMoney(body.credit_limit, "信用额度");
+    if (problem) return errorJson(problem, 400);
+    if (body.credit_limit < 0) return errorJson("信用额度必须是不小于 0 的数字", 400);
+    creditLimit = body.credit_limit;
   }
 
   let planId: number | null = null;
   if (body?.plan_id !== undefined && body?.plan_id !== null) {
-    planId = Number(body.plan_id);
-    if (!Number.isFinite(planId) || planId <= 0) return errorJson("plan_id 不合法", 400);
-    planId = Math.floor(planId);
+    if (typeof body.plan_id !== "number" || !Number.isInteger(body.plan_id) || body.plan_id <= 0) {
+      return errorJson("plan_id 必须是正整数", 400);
+    }
+    planId = body.plan_id;
   }
 
   // 邮箱跟 login 一样归一：trim + 小写，否则同一个邮箱大小写不同会建出两个号
   let email: string | null = null;
   if (body?.email !== undefined && body?.email !== null) {
-    email = String(body.email).trim().toLowerCase() || null;
+    if (typeof body.email !== "string") return errorJson("邮箱必须是字符串", 400);
+    email = body.email.trim().toLowerCase() || null;
     if (email && email.length > 191) return errorJson("邮箱过长", 400);
   }
 

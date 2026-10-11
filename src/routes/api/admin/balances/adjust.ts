@@ -3,6 +3,7 @@ import type { APIEvent } from "@solidjs/start/server";
 import { requireUser } from "~/lib/api-auth";
 import { errorJson, json } from "~/lib/http";
 import { applyCredit, InsufficientBalanceError, LedgerError } from "~/lib/ledger";
+import { checkMoney } from "~/lib/validate";
 
 /**
  * 本机扩展的 source 取值。openapi 的 /admin/balances/adjust 只描述了管理员调账，
@@ -40,10 +41,14 @@ export async function POST({ request }: APIEvent) {
 
   // NaN、Infinity、0 都挡在这里。字符串数字也拒绝 —— openapi 声明 amount 是 number，
   // 这里不做隐式转换，免得 "abc" 经 Number() 变成 NaN 后才被当成参数错。
+  // 范围也要挡：delta 列是 DECIMAL(14,8)，整数部分只有 6 位，
+  // 不挡的话 1e6 就能让 MySQL 抛 ER_WARN_DATA_OUT_OF_RANGE，变成 500。
   const amount = body?.amount;
   if (typeof amount !== "number" || !Number.isFinite(amount) || amount === 0) {
     return errorJson("amount 必须是非零数字", 400);
   }
+  const amountProblem = checkMoney(amount, "amount");
+  if (amountProblem) return errorJson(amountProblem, 400);
 
   const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
   if (!reason) return errorJson("reason 不能为空", 400);

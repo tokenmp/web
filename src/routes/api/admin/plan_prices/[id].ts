@@ -8,7 +8,9 @@ import { planPrices } from "~/lib/schema";
 
 function parseId(raw: string | undefined) {
   const id = Number(raw);
-  return Number.isFinite(id) && id > 0 ? id : null;
+  // 必须是整数：1.5 以前算合法 id 然后查不到，回了 404；
+  // openapi 把非整数归 400，两者要分得开
+  return Number.isInteger(id) && id > 0 ? id : null;
 }
 
 /**

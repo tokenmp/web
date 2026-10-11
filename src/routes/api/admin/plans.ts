@@ -2,10 +2,12 @@ import type { APIEvent } from "@solidjs/start/server";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 
 import { guardAdmin } from "~/lib/api-auth";
+import { duplicateMessageFor } from "~/lib/db-error";
 import { db } from "~/lib/db";
 import { errorJson, json, num } from "~/lib/http";
 import { decimal8 } from "~/lib/ledger";
 import { plans, subscriptions, type PlanPriceRow, type PlanRow } from "~/lib/schema";
+import { checkInt32, checkMoney, checkText, PRICE } from "~/lib/validate";
 
 const MODES = ["pay_as_you_go", "subscription"] as const;
 const PRICING_MODES = ["markup", "table"] as const;
@@ -92,9 +94,10 @@ function oneOf(value: string, allowed: readonly string[]) {
  * 否则「整体替换」会把某一处漏掉的字段写成默认值。
  */
 export function parsePlanInput(body: Record<string, unknown>): PlanInputResult {
-  const name = String(body.name ?? "").trim();
-  if (!name) return { ok: false, message: "套餐名不能为空" };
-  if (name.length > 64) return { ok: false, message: "套餐名不能超过 64 字" };
+  // 只认字符串。之前用 String(body.name ?? "") 强转，传 {} 会建出一个叫 [object Object] 的套餐
+  const nameProblem = checkText(body.name, "套餐名", 64);
+  if (nameProblem) return { ok: false, message: nameProblem };
+  const name = (body.name as string).trim();
 
   const mode = String(body.mode ?? "");
   if (!oneOf(mode, MODES)) return { ok: false, message: "mode 只能是 pay_as_you_go 或 subscription" };
@@ -116,30 +119,40 @@ export function parsePlanInput(body: Record<string, unknown>): PlanInputResult {
 
   const rawMultiplier = body.markup_multiplier;
   const markupMultiplier =
-    rawMultiplier === undefined || rawMultiplier === null || rawMultiplier === ""
-      ? 1
-      : Number(rawMultiplier);
-  if (!Number.isFinite(markupMultiplier) || markupMultiplier <= 0) {
-    return { ok: false, message: "markup_multiplier 必须大于 0" };
+    rawMultiplier === undefined || rawMultiplier === null || rawMultiplier === "" ? 1 : rawMultiplier;
+  if (typeof markupMultiplier !== "number" || !Number.isFinite(markupMultiplier) || markupMultiplier <= 0) {
+    return { ok: false, message: "markup_multiplier 必须是大于 0 的数字" };
   }
+  const multiplierProblem = checkMoney(markupMultiplier, "markup_multiplier");
+  if (multiplierProblem) return { ok: false, message: multiplierProblem };
 
   const rawPrice = body.price;
-  const price = rawPrice === undefined || rawPrice === null || rawPrice === "" ? 0 : Number(rawPrice);
-  if (!Number.isFinite(price) || price < 0) return { ok: false, message: "price 不能为负" };
+  const price = rawPrice === undefined || rawPrice === null || rawPrice === "" ? 0 : rawPrice;
+  if (typeof price !== "number" || !Number.isFinite(price) || price < 0) {
+    return { ok: false, message: "price 必须是非负数字" };
+  }
+  // 超出 DECIMAL 能表示的范围时 MySQL 会抛 ER_WARN_DATA_OUT_OF_RANGE，
+  // 不挡在入库前就变成 500
+  const priceProblem = checkMoney(price, "price");
+  if (priceProblem) return { ok: false, message: priceProblem };
 
   const rawAmount = body.quota_amount;
   const hasAmount = rawAmount !== undefined && rawAmount !== null && rawAmount !== "";
-  const quotaAmount = hasAmount ? Number(rawAmount) : 0;
-  if (!Number.isFinite(quotaAmount) || quotaAmount < 0) {
-    return { ok: false, message: "quota_amount 不能为负" };
+  const quotaAmount = hasAmount ? rawAmount : 0;
+  if (typeof quotaAmount !== "number" || !Number.isFinite(quotaAmount) || quotaAmount < 0) {
+    return { ok: false, message: "quota_amount 必须是非负数字" };
   }
+  const amountProblem = checkMoney(quotaAmount, "quota_amount", PRICE);
+  if (amountProblem) return { ok: false, message: amountProblem };
 
   const rawDays = body.quota_period_days;
   const hasDays = rawDays !== undefined && rawDays !== null && rawDays !== "";
-  const quotaPeriodDays = hasDays ? Math.floor(Number(rawDays)) : 0;
-  if (!Number.isFinite(quotaPeriodDays) || quotaPeriodDays < 0) {
-    return { ok: false, message: "quota_period_days 不能为负" };
+  const quotaPeriodDays = hasDays ? rawDays : 0;
+  if (typeof quotaPeriodDays !== "number" || !Number.isFinite(quotaPeriodDays) || quotaPeriodDays < 0) {
+    return { ok: false, message: "quota_period_days 必须是非负数字" };
   }
+  const daysProblem = checkInt32(quotaPeriodDays, "quota_period_days");
+  if (daysProblem) return { ok: false, message: daysProblem };
 
   // 订阅制没有额度与周期就没有可执行的含义，openapi 也把这两个列成订阅时的必填
   if (mode === "subscription" && (!hasAmount || quotaAmount <= 0)) {
@@ -149,8 +162,11 @@ export function parsePlanInput(body: Record<string, unknown>): PlanInputResult {
     return { ok: false, message: "订阅套餐必须填 quota_period_days 且大于 0" };
   }
 
-  const currency = String(body.currency ?? "CNY");
-  if (currency.length !== 3) return { ok: false, message: "currency 必须是 3 个字符" };
+  const rawCurrency = body.currency;
+  const currency = rawCurrency === undefined || rawCurrency === null ? "CNY" : rawCurrency;
+  if (typeof currency !== "string" || currency.length !== 3) {
+    return { ok: false, message: "currency 必须是 3 个字符的字符串" };
+  }
 
   let features: string[] | null = null;
   if (body.features !== undefined && body.features !== null) {
@@ -159,6 +175,14 @@ export function parsePlanInput(body: Record<string, unknown>): PlanInputResult {
   }
 
   const rateRules = body.rate_rules === undefined ? null : body.rate_rules;
+
+  // sort_order 是 int32，塞 1e15 会撞上 MySQL 的范围报错变成 500
+  const rawSortOrder = body.sort_order;
+  const sortOrderValue =
+    rawSortOrder === undefined || rawSortOrder === null || rawSortOrder === "" ? 0 : rawSortOrder;
+  const sortProblem = checkInt32(sortOrderValue, "sort_order");
+  if (sortProblem) return { ok: false, message: sortProblem };
+  const sortOrder = sortOrderValue as number;
 
   return {
     ok: true,
@@ -176,7 +200,7 @@ export function parsePlanInput(body: Record<string, unknown>): PlanInputResult {
       currency,
       features,
       recommended: body.recommended ? 1 : 0,
-      sortOrder: Number.isFinite(Number(body.sort_order)) ? Math.floor(Number(body.sort_order)) : 0,
+      sortOrder,
     },
   };
 }
@@ -252,11 +276,20 @@ export async function POST({ request }: APIEvent) {
   if (duplicate) return errorJson("套餐名已存在", 409);
 
   const now = new Date();
-  const [created] = await db
-    .insert(plans)
-    .values({ ...value, status: 1, createdAt: now, updatedAt: now })
-    .$returningId();
+  let createdId: number;
+  try {
+    const [created] = await db
+      .insert(plans)
+      .values({ ...value, status: 1, createdAt: now, updatedAt: now })
+      .$returningId();
+    createdId = created.id;
+  } catch (err) {
+    // 预检查放过去了之后才撞上唯一键（并发下常见），要翻成 409 而不是 500
+    const dup = duplicateMessageFor(err, {}, "套餐名已存在");
+    if (dup) return errorJson(dup, 409);
+    throw err;
+  }
 
-  const [row] = await db.select().from(plans).where(eq(plans.id, created.id)).limit(1);
+  const [row] = await db.select().from(plans).where(eq(plans.id, createdId)).limit(1);
   return json({ data: planCore(row) });
 }
