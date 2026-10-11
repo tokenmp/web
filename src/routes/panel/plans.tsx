@@ -9,44 +9,67 @@ import { Card } from "~/components/ui/card";
 import { DecimalSplit } from "~/components/ui/decimal-split";
 import { Dialog } from "~/components/ui/dialog";
 import { Select } from "~/components/ui/select";
-import {
-  currentPlan,
-  panelNow,
-  planViews,
-  usageSeries,
-  type CurrentPlan,
-  type PlanView,
-} from "~/lib/panel-data";
+import { usageSeries } from "~/lib/panel-data";
 import { planModeMeta, pricingModeMeta } from "~/lib/panel-labels";
+import { createClientResource } from "~/lib/resource";
+import {
+  emptyPlans,
+  fetchPlans,
+  isInsufficientBalance,
+  subscribePlan,
+  type PanelPlan,
+} from "~/lib/user-panel";
 import { formatDate, formatNumber, formatPoints } from "~/lib/utils";
 
-/** 周期还剩几天。按固定的样例时间算，服务端与浏览器得出一致的结果 */
-function daysLeft(current: CurrentPlan) {
-  if (!current.period_end) return null;
-  const end = new Date(current.period_end).getTime();
-  return Math.max(0, Math.ceil((end - panelNow) / 86_400_000));
+/**
+ * 周期还剩几天。数据在客户端加载，这里用当前时间算，不参与首屏水合。
+ */
+function daysLeft(periodEnd: string | null | undefined) {
+  if (!periodEnd) return null;
+  const end = new Date(periodEnd).getTime();
+  if (!Number.isFinite(end)) return null;
+  return Math.max(0, Math.ceil((end - Date.now()) / 86_400_000));
 }
 
-function quotaLabel(plan: PlanView) {
-  if (plan.quota_amount == null) return "按量计费";
+function quotaLabel(plan: PanelPlan) {
+  if (plan.mode === "pay_as_you_go" || plan.quota_amount <= 0) return "按量计费";
   return plan.quota_kind === "requests"
     ? `${formatNumber(plan.quota_amount)} 次`
     : `${formatPoints(plan.quota_amount)} 积分`;
+}
+
+/** 接口把 price=null 归零，0 表示没有牌价（按量付费），不是「免费用」 */
+function hasPrice(plan: PanelPlan) {
+  return plan.mode !== "pay_as_you_go" && plan.price > 0;
 }
 
 /**
  * 套餐。
  *
  * 三块：现在订的是什么（含周期额度用了多少）、最近用得怎么样、还能换什么。
- * 换套餐的确认弹窗里写清「切换后立即按新套餐计价」，这是用户最容易误解的地方 ——
- * 线上是管理员操作，本机先做个入口，把交互路径定下来。
+ * 列表与当前订阅读 GET /api/user/plans；确认订阅会真的 POST 下单，换档时后端按旧订阅
+ * 剩余额度折算抵扣，只补差价，余额不够回 402，这里单独提示「先充值」。
+ *
+ * 用量统计那三格仍读 panel-data 的用量样例：它对应的 GET /user/usage 在本机还是 remote，
+ * 等用量数据源落地后再换成那个接口。
  */
 export default function PanelPlans() {
-  const [pending, setPending] = createSignal<PlanView | null>(null);
+  const { data, loading, error, reload } = createClientResource(fetchPlans, emptyPlans);
+  const [pending, setPending] = createSignal<PanelPlan | null>(null);
   const [subscribed, setSubscribed] = createSignal<string | null>(null);
+  const [notice, setNotice] = createSignal("");
+  const [subscribing, setSubscribing] = createSignal(false);
 
-  const left = () => daysLeft(currentPlan);
-  const used = () => currentPlan.quota_used / currentPlan.quota_limit;
+  const plans = () => data().plans;
+  const current = () => data().current;
+  const currentPlanId = () => current()?.plan.id ?? null;
+
+  const left = () => daysLeft(current()?.period_end);
+  const used = () => {
+    const value = current();
+    if (!value || value.quota_limit <= 0) return 0;
+    return value.quota_used / value.quota_limit;
+  };
 
   const usage = createMemo(() => {
     const today = usageSeries[usageSeries.length - 1];
@@ -62,9 +85,27 @@ export default function PanelPlans() {
     ];
   });
 
-  const subscribe = (plan: PlanView) => {
-    setSubscribed(plan.name);
-    setPending(null);
+  const subscribe = async (plan: PanelPlan) => {
+    setNotice("");
+    setSubscribed(null);
+    setSubscribing(true);
+    try {
+      await subscribePlan(plan.id);
+      setPending(null);
+      setSubscribed(plan.name);
+      await reload();
+    } catch (err) {
+      // 402 是「余额不足」，不是通用失败：换成充值提示，别只丢一句请求失败
+      setNotice(
+        isInsufficientBalance(err)
+          ? "余额不足，无法订阅该套餐。请先充值，或改选按量付费。"
+          : err instanceof Error
+            ? err.message
+            : "订阅失败",
+      );
+    } finally {
+      setSubscribing(false);
+    }
   };
 
   return (
@@ -75,61 +116,92 @@ export default function PanelPlans() {
 
       <Show when={subscribed()}>
         <p class="mb-4 rounded-lg border border-success/30 bg-success/15 px-4 py-2.5 text-sm text-success-text">
-          已提交订阅「{subscribed()}」，本机是示例数据，没有真的下单。
+          已订阅「{subscribed()}」，周期额度从新周期起算。
         </p>
       </Show>
 
-      <Card>
-        <div class="flex flex-wrap items-start justify-between gap-3 border-b p-4">
-          <div>
-            <div class="flex flex-wrap items-center gap-2">
-              <h2 class="text-base font-semibold tracking-tight">{currentPlan.plan.name}</h2>
-              <Badge variant="success">订阅中</Badge>
-              <Badge variant={pricingModeMeta(currentPlan.plan.pricing_mode).variant}>
-                {pricingModeMeta(currentPlan.plan.pricing_mode).label}
-                {currentPlan.plan.markup_multiplier
-                  ? ` ×${currentPlan.plan.markup_multiplier}`
-                  : ""}
-              </Badge>
+      <Show when={notice()}>
+        <p class="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
+          {notice()}
+        </p>
+      </Show>
+      <Show when={error()}>
+        <p class="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
+          {error()}
+        </p>
+      </Show>
+
+      <Show
+        when={current()}
+        fallback={
+          <Card>
+            <div class="p-4">
+              <h2 class="text-base font-semibold tracking-tight">
+                {error() ? "套餐读取失败" : loading() || plans().length === 0 ? "加载中…" : "还没有订阅套餐"}
+              </h2>
+              <p class="mt-1.5 text-xs text-muted-foreground">
+                {error()
+                  ? "刷新页面重试，或稍后再看。"
+                  : loading() || plans().length === 0
+                    ? "正在读取当前订阅"
+                    : "从下面的目录里挑一档订阅，或选「按量付费」只按实际用量从余额扣费。"}
+              </p>
             </div>
-            <p class="mt-1.5 text-xs text-muted-foreground">
-              周期 {formatDate(currentPlan.period_start)} – {formatDate(currentPlan.period_end)}
-              {left() !== null && <span> · 剩余 {left()} 天</span>}
+          </Card>
+        }
+      >
+        <Card>
+          <div class="flex flex-wrap items-start justify-between gap-3 border-b p-4">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-base font-semibold tracking-tight">{current()!.plan.name}</h2>
+                <Badge variant="success">订阅中</Badge>
+                <Badge variant={pricingModeMeta(current()!.plan.pricing_mode).variant}>
+                  {pricingModeMeta(current()!.plan.pricing_mode).label}
+                  {current()!.plan.markup_multiplier
+                    ? ` ×${current()!.plan.markup_multiplier}`
+                    : ""}
+                </Badge>
+              </div>
+              <p class="mt-1.5 text-xs text-muted-foreground">
+                周期 {formatDate(current()!.period_start)} – {formatDate(current()!.period_end)}
+                {left() !== null && <span> · 剩余 {left()} 天</span>}
+              </p>
+            </div>
+
+            <Button variant="outline" onClick={() => setPending(current()!.plan)}>
+              更换套餐
+            </Button>
+          </div>
+
+          <div class="p-4">
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-muted-foreground">本周期额度用量</span>
+              <span>
+                <DecimalSplit text={formatPoints(current()!.quota_used)} /> /{" "}
+                <DecimalSplit text={formatPoints(current()!.quota_limit)} />
+              </span>
+            </div>
+            <div
+              class="mt-2 h-2 overflow-hidden rounded-full bg-muted"
+              role="progressbar"
+              aria-valuenow={Math.round(used() * 100)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="本周期额度用量"
+            >
+              <div class="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, used() * 100)}%` }} />
+            </div>
+            <p class="mt-2 text-xs text-muted-foreground">
+              剩余{" "}
+              <DecimalSplit
+                text={formatPoints(current()!.quota_limit - current()!.quota_used)}
+              />{" "}
+              积分 · 到期后额度自动重置，未用部分不结转
             </p>
           </div>
-
-          <Button variant="outline" onClick={() => setPending(currentPlan.plan)}>
-            更换套餐
-          </Button>
-        </div>
-
-        <div class="p-4">
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-muted-foreground">本周期额度用量</span>
-            <span>
-              <DecimalSplit text={formatPoints(currentPlan.quota_used)} /> /{" "}
-              <DecimalSplit text={formatPoints(currentPlan.quota_limit)} />
-            </span>
-          </div>
-          <div
-            class="mt-2 h-2 overflow-hidden rounded-full bg-muted"
-            role="progressbar"
-            aria-valuenow={Math.round(used() * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="本周期额度用量"
-          >
-            <div class="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, used() * 100)}%` }} />
-          </div>
-          <p class="mt-2 text-xs text-muted-foreground">
-            剩余{" "}
-            <DecimalSplit
-              text={formatPoints(currentPlan.quota_limit - currentPlan.quota_used)}
-            />{" "}
-            积分 · 到期后额度自动重置，未用部分不结转
-          </p>
-        </div>
-      </Card>
+        </Card>
+      </Show>
 
       <Card class="mt-5">
         <div class="border-b p-4">
@@ -155,9 +227,9 @@ export default function PanelPlans() {
 
       <Section title="在售套餐目录" caption="切换后即时生效，新套餐额度从新周期起算" class="mt-5">
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <For each={planViews}>
+          <For each={plans()}>
             {plan => {
-              const active = () => plan.id === currentPlan.plan.id;
+              const active = () => plan.id === currentPlanId();
               return (
                 <Card class={active() ? "border-primary/60" : undefined}>
                   <div class="flex items-start justify-between gap-2 border-b p-4">
@@ -181,16 +253,15 @@ export default function PanelPlans() {
 
                   <div class="p-4">
                     <p class="text-2xl font-semibold tracking-tight">
-                      {plan.price == null ? (
-                        <span class="text-base">面议</span>
-                      ) : (
-                        <>
-                          <DecimalSplit text={formatPoints(plan.price)} />
-                          <span class="ml-1 text-xs font-normal text-muted-foreground">
-                            积分 / {plan.quota_period_days ?? "—"} 天
-                          </span>
-                        </>
-                      )}
+                      <Show
+                        when={hasPrice(plan)}
+                        fallback={<span class="text-base">按量付费</span>}
+                      >
+                        <DecimalSplit text={formatPoints(plan.price)} />
+                        <span class="ml-1 text-xs font-normal text-muted-foreground">
+                          积分 / {plan.quota_period_days || "—"} 天
+                        </span>
+                      </Show>
                     </p>
 
                     <dl class="mt-3 space-y-1.5 text-xs">
@@ -214,7 +285,7 @@ export default function PanelPlans() {
                           {plan.overage_mode === "disabled" ? "停止调用" : "转余额按量计费"}
                         </dd>
                       </div>
-                      <Show when={plan.quota_kind === "requests" && plan.weight_min != null}>
+                      <Show when={plan.quota_kind === "requests" && plan.weight_max > 0}>
                         <div class="flex justify-between gap-3">
                           <dt class="text-muted-foreground">权重区间</dt>
                           <dd class="font-medium tabular-nums">
@@ -230,7 +301,11 @@ export default function PanelPlans() {
                       disabled={active()}
                       onClick={() => setPending(plan)}
                     >
-                      {active() ? "当前套餐" : plan.price == null ? "联系定制" : "立即订阅"}
+                      {active()
+                        ? "当前套餐"
+                        : plan.mode === "pay_as_you_go"
+                          ? "切换到此套餐"
+                          : "立即订阅"}
                     </Button>
                   </div>
                 </Card>
@@ -257,7 +332,7 @@ export default function PanelPlans() {
         </p>
         <p>
           <span class="font-medium text-foreground">切换套餐</span>
-          ：切换后立即按新套餐计价，新套餐额度从新周期起算。线上由平台管理员操作。
+          ：确认后立即从余额扣一次周期费用，新套餐额度从新周期起算；余额不足会提示先充值。
         </p>
       </div>
 
@@ -267,17 +342,21 @@ export default function PanelPlans() {
           if (!open) setPending(null);
         }}
         title={`订阅「${pending()?.name ?? ""}」？`}
-        description="切换后立即按新套餐计价，新套餐额度从新周期起算"
+        description="切换后立即从余额扣周期费用，新套餐额度从新周期起算"
         footer={
           <>
             <Button variant="outline" onClick={() => setPending(null)}>
               取消
             </Button>
             <Button
-              disabled={pending()?.id === currentPlan.plan.id}
-              onClick={() => subscribe(pending()!)}
+              disabled={pending()?.id === currentPlanId() || subscribing()}
+              onClick={() => pending() && void subscribe(pending()!)}
             >
-              {pending()?.id === currentPlan.plan.id ? "已是当前套餐" : "确认订阅"}
+              {pending()?.id === currentPlanId()
+                ? "已是当前套餐"
+                : subscribing()
+                  ? "提交中…"
+                  : "确认订阅"}
             </Button>
           </>
         }
@@ -285,10 +364,10 @@ export default function PanelPlans() {
         <Show when={pending()}>
           <Select
             label="目标套餐"
-            options={planViews.map(plan => ({ value: String(plan.id), label: plan.name }))}
+            options={plans().map(plan => ({ value: String(plan.id), label: plan.name }))}
             value={String(pending()!.id)}
             onChange={id =>
-              setPending(planViews.find(plan => plan.id === Number(id)) ?? null)
+              setPending(plans().find(plan => plan.id === Number(id)) ?? null)
             }
             portal={false}
           />
@@ -297,7 +376,9 @@ export default function PanelPlans() {
             <div class="flex justify-between gap-3">
               <dt class="text-muted-foreground">周期费用</dt>
               <dd class="font-medium tabular-nums">
-                {pending()!.price == null ? "面议" : `${formatPoints(pending()!.price!)} 积分`}
+                {hasPrice(pending()!)
+                  ? `${formatPoints(pending()!.price)} 积分`
+                  : "按量计费"}
               </dd>
             </div>
             <div class="flex justify-between gap-3">
@@ -307,12 +388,12 @@ export default function PanelPlans() {
             <div class="flex justify-between gap-3">
               <dt class="text-muted-foreground">周期长度</dt>
               <dd class="font-medium tabular-nums">
-                {pending()!.quota_period_days ?? "—"} 天
+                {pending()!.quota_period_days || "—"} 天
               </dd>
             </div>
           </dl>
           <p class="mt-3 text-xs text-muted-foreground">
-            本机没有接支付与订阅接口，这里只到确认这一步。
+            确认后立即从余额扣一次周期费用；余额不足时接口返回 402，这里会提示先充值。
           </p>
         </Show>
       </Dialog>

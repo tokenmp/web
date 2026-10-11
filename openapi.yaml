@@ -80,6 +80,8 @@ security:
   - adminToken: []
 
 tags:
+  - name: Internal
+    description: 本机新增。给转发内核与支付渠道回调用的内部接口，不走会话，用共享密钥
   - name: Auth
     description: 注册、登录、会话。本机已实现
   - name: Users
@@ -510,6 +512,23 @@ components:
           type: object
           additionalProperties: { $ref: "#/components/schemas/ModelConfig" }
         rate_rules: { type: array, items: { $ref: "#/components/schemas/RateRule" } }
+
+    RechargeOrder:
+      type: object
+      description: 本机新增。充值单，管理员代充不经过它
+      properties:
+        id: { type: integer, format: int64 }
+        order_no: { type: string }
+        user_id: { type: integer, format: int64 }
+        amount: { type: number }
+        currency: { type: string }
+        channel: { type: string, description: mock / wechat / alipay / stripe }
+        status: { type: string, enum: [pending, paid, failed, cancelled, refunded] }
+        external_no: { type: [string, "null"], description: 渠道流水号 }
+        paid_at: { type: [string, "null"], format: date-time }
+        credit_transaction_id: { type: [integer, "null"], format: int64, description: 入账的那条流水，用来查这单有没有真的入过账 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
     PlanCore:
       type: object
@@ -956,7 +975,8 @@ components:
         balance_after: { type: number }
         source:
           type: string
-          enum: [recharge, adjust, usage, channel_share, subscription]
+          enum: [recharge, adjust, usage, channel_share, subscription, refund]
+          description: 本机在线上五个取值之外加了 refund，用于退给用户的钱
         ref_id: { type: string }
         created_at: { type: string, format: date-time }
         detail: { description: 原样透出的 JSON }
@@ -1164,6 +1184,227 @@ components:
             error: { code: gateway_sync_failed, message: 同步到网关失败 }
 
 paths:
+  /user/plans/cancel:
+    post:
+      operationId: postUserPlansCancel
+      tags: [UserPanel]
+      summary: 结束当前订阅
+      description: |
+        本机新增。取当前生效订阅（active 且未过期、period_end 最晚那条），置为 cancelled，
+        并把 users.plan_id 清空。**不退款**，剩余额度作废；要退钱走管理端那个端点。
+      x-implemented: local
+      security:
+        - bearerSession: []
+      responses:
+        "200":
+          description: 已取消
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          plan_id: { type: integer, format: int64 }
+                          cancelled_at: { type: string, format: date-time }
+                          forfeited_quota: { type: number, description: 作废掉的剩余额度 }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/users/{id}/subscription:
+    post:
+      operationId: postAdminUsersIdSubscription
+      tags: [Plans]
+      summary: 管理端退订，可带退款
+      description: |
+        本机新增。取消该用户的生效订阅；`refund=true` 时按剩余天数折算退款额，
+        写一条 source=refund 的流水。折算为 0 或负数时不记账。
+        `quota_kind=requests` 的套餐退款额为 0（次数退不回钱）。
+      x-implemented: local
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refund: { type: boolean, default: false }
+                reason: { type: string, maxLength: 256 }
+      responses:
+        "200":
+          description: 已退订
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          plan_id: { type: integer, format: int64 }
+                          refund_amount: { type: number }
+                          balance_after: { type: number }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /user/recharge:
+    get:
+      operationId: getUserRechargeOrders
+      tags: [UserPanel]
+      summary: 我的充值单
+      x-implemented: local
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 一页充值单
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/RechargeOrder" }
+    post:
+      operationId: postUserRecharge
+      tags: [UserPanel]
+      summary: 下一张充值单
+      description: |
+        本机新增。没接真实支付渠道，默认 `channel=mock`，入账要等回调。
+        真接渠道时只需换回调来源与验签。
+      x-implemented: local
+      security:
+        - bearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount: { type: number, exclusiveMinimum: 0 }
+                channel: { type: string, default: mock }
+      responses:
+        "201":
+          description: 单子已建，状态 pending
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/RechargeOrder" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /internal/recharge-callback:
+    post:
+      operationId: postInternalRechargeCallback
+      tags: [Internal]
+      summary: 充值渠道回调
+      description: |
+        本机新增。不走会话，用 `x-callback-secret` 头校验（环境变量 RECHARGE_CALLBACK_SECRET）。
+        **按 order_no 幂等**：同一张单重复回调只在第一次入账，重复的返回 `{ok:true, already:true}`。
+      x-implemented: local
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order_no, status]
+              properties:
+                order_no: { type: string }
+                status: { type: string, enum: [paid, failed] }
+                external_no: { type: string }
+                amount: { type: number }
+      responses:
+        "200":
+          description: 处理完了。already=true 表示这单之前已经入过账
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/OkEnvelope"
+                  - type: object
+                    properties:
+                      already: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /internal/records:
+    post:
+      operationId: postInternalRecords
+      tags: [Internal]
+      summary: 转发内核回写调用记录与计费
+      description: |
+        本机新增。批量摄入，按 `request_id` 幂等（重复提交不会记两遍）。
+        同样用 `x-callback-secret` 头校验。网关接上后由它推送。
+      x-implemented: local
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                records:
+                  type: array
+                  items: { $ref: "#/components/schemas/RequestRecord" }
+                billing:
+                  type: array
+                  items: { $ref: "#/components/schemas/BillingRecord" }
+      responses:
+        "200":
+          description: 摄入结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/OkEnvelope"
+                  - type: object
+                    properties:
+                      inserted: { type: integer }
+                      skipped: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /admin/dashboard:
+    get:
+      operationId: getAdminDashboard
+      tags: [Dashboard]
+      summary: 概览（summary 与 usage 的合并入口）
+      description: 本机新增。一次把概览指标与按天用量都取回来，省一次往返。
+      x-implemented: local
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 90, default: 14 }
+      responses:
+        "200":
+          description: 指标与趋势
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { type: object }
+
   /healthz:
     get:
       operationId: getHealthz
@@ -1370,7 +1611,7 @@ paths:
         改完把 `token_version` 加一，旧 token 随即失效，同时返回新签的 token。
 
         **本机未实现。**
-      x-implemented: remote
+      x-implemented: local
       security:
         - bearerSession: []
       requestBody:
@@ -1412,7 +1653,7 @@ paths:
         - name: keyword
           in: query
           schema: { type: string }
-          description: 按用户名模糊匹配
+          description: 按用户名或邮箱模糊匹配（本机把邮箱也纳入匹配）
         - name: sort
           in: query
           schema: { type: string, enum: [credit_limit, created_at, updated_at, name] }
@@ -1568,6 +1809,42 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
 
   /admin/users/{id}/api_keys:
+    patch:
+      operationId: patchAdminUsersIdApiKey
+      tags: [Users]
+      summary: 管理端改某个用户下的密钥（路径里的 id 是用户 id，密钥放 body.key_id）
+      x-implemented: local
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key_id]
+              properties:
+                key_id: { type: integer, format: int64 }
+                status: { type: integer, enum: [0, 1], description: 0 停用、1 启用 }
+                name: { type: [string, "null"], maxLength: 64 }
+                expires_at: { type: [string, "null"], format: date-time }
+                model_whitelist:
+                  type: [array, "null"]
+                  items: { type: string }
+                rate_limit_per_min: { type: [integer, "null"] }
+      responses:
+        "200":
+          description: 改好了
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/APIKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
     get:
       operationId: getAdminUsersIdApiKeys
       tags: [Users]
@@ -1628,6 +1905,40 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
 
   /admin/api_keys/{id}:
+    patch:
+      operationId: patchAdminApiKey
+      tags: [Users]
+      summary: 管理端改密钥
+      x-implemented: local
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: integer, enum: [0, 1], description: 0 停用、1 启用 }
+                name: { type: [string, "null"], maxLength: 64 }
+                expires_at: { type: [string, "null"], format: date-time }
+                model_whitelist:
+                  type: [array, "null"]
+                  items: { type: string }
+                rate_limit_per_min: { type: [integer, "null"] }
+      responses:
+        "200":
+          description: 改好了
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/APIKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       operationId: deleteAdminApiKeysId
       tags: [Users]
@@ -2786,7 +3097,7 @@ paths:
       operationId: getAdminBillingRecords
       tags: [Billing]
       summary: 计费流水
-      x-implemented: remote
+      x-implemented: local
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
@@ -2862,7 +3173,7 @@ paths:
       operationId: getAdminRequestRecords
       tags: [Billing]
       summary: 调用记录
-      x-implemented: remote
+      x-implemented: local
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
@@ -2921,7 +3232,7 @@ paths:
       tags: [Billing]
       summary: 调用记录的筛选项
       description: 返回表里出现过的模型与 user agent，供筛选下拉用。响应用 data，不是 items
-      x-implemented: remote
+      x-implemented: local
       responses:
         "200":
           description: 可选筛选项
@@ -3010,7 +3321,7 @@ paths:
       tags: [Dashboard]
       summary: 概览指标
       description: 统计窗口固定是最近 24 小时，不可调
-      x-implemented: remote
+      x-implemented: local
       responses:
         "200":
           description: 24 小时汇总
@@ -3041,7 +3352,7 @@ paths:
       operationId: getAdminDashboardUsage
       tags: [Dashboard]
       summary: 按天的用量趋势
-      x-implemented: remote
+      x-implemented: local
       parameters:
         - name: days
           in: query
@@ -3492,6 +3803,40 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
 
   /user/api_keys/{id}:
+    patch:
+      operationId: patchUserApiKey
+      tags: [UserPanel]
+      summary: 改自己的密钥
+      x-implemented: local
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: integer, enum: [0, 1], description: 0 停用、1 启用 }
+                name: { type: [string, "null"], maxLength: 64 }
+                expires_at: { type: [string, "null"], format: date-time }
+                model_whitelist:
+                  type: [array, "null"]
+                  items: { type: string }
+                rate_limit_per_min: { type: [integer, "null"] }
+      responses:
+        "200":
+          description: 改好了
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/APIKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       operationId: deleteUserApiKeysId
       tags: [UserPanel]
@@ -3516,7 +3861,7 @@ paths:
       operationId: getUserBillingRecords
       tags: [UserPanel]
       summary: 我的账单
-      x-implemented: remote
+      x-implemented: local
       security:
         - bearerSession: []
         - apiKey: []
@@ -3562,7 +3907,7 @@ paths:
       operationId: getUserRequestRecords
       tags: [UserPanel]
       summary: 我的调用记录
-      x-implemented: remote
+      x-implemented: local
       security:
         - bearerSession: []
         - apiKey: []
@@ -3607,7 +3952,7 @@ paths:
       operationId: getUserRequestRecordsFilters
       tags: [UserPanel]
       summary: 我的筛选项
-      x-implemented: remote
+      x-implemented: local
       security:
         - bearerSession: []
         - apiKey: []
@@ -3657,7 +4002,7 @@ paths:
       operationId: getUserUsage
       tags: [UserPanel]
       summary: 我的用量趋势
-      x-implemented: remote
+      x-implemented: local
       security:
         - bearerSession: []
         - apiKey: []

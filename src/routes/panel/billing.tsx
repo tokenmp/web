@@ -1,6 +1,6 @@
 import { Title } from "@solidjs/meta";
 import Search from "lucide-solid/icons/search";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createEffect, createSignal, on, Show } from "solid-js";
 
 import { PageHeader } from "~/components/layout/page-header";
 import { CopyableId } from "~/components/panel/copyable-id";
@@ -16,23 +16,17 @@ import { PagerIfNeeded } from "~/components/ui/pager";
 import { Segmented } from "~/components/ui/segmented";
 import { Select } from "~/components/ui/select";
 import { Sheet, SheetClose } from "~/components/ui/sheet";
-import { billingRecords, type BillingRecord } from "~/lib/panel-data";
-import { billingStatusMeta, ledgerMeta } from "~/lib/panel-labels";
+import { billingStatusMeta, ledgerMeta, type BadgeMeta } from "~/lib/panel-labels";
+import { createClientResource } from "~/lib/resource";
+import { getBillingRecords, getRequestRecordFilters, type BillingRecord } from "~/lib/usage";
 import { formatDateTime, formatLatency, formatNumber, formatPoints, formatRelativeTime } from "~/lib/utils";
 
 const PAGE_SIZE = 10;
 
-const MODEL_OPTIONS = [
-  { value: "all", label: "全部模型" },
-  ...[...new Set(billingRecords.map(record => record.model))]
-    .sort()
-    .map(model => ({ value: model, label: model })),
-];
-
-const LEDGER_TABS = [
-  { value: "all", label: "全部扣费" },
-  { value: "quota", label: "订阅额度" },
-  { value: "balance", label: "余额" },
+const CHARGE_TABS = [
+  { value: "all", label: "全部" },
+  { value: "paid", label: "计费" },
+  { value: "free", label: "免费" },
 ] as const;
 
 const STATUS_TABS = [
@@ -41,8 +35,13 @@ const STATUS_TABS = [
   { value: "error", label: "失败" },
 ] as const;
 
-type LedgerFilter = (typeof LEDGER_TABS)[number]["value"];
+type ChargeFilter = (typeof CHARGE_TABS)[number]["value"];
 type StatusFilter = (typeof STATUS_TABS)[number]["value"];
+
+/** 支付方式的徽标。ledger 为空（老数据或没记）时给一个破折号，别渲染空徽标 */
+function ledgerBadge(ledger: string | null): BadgeMeta {
+  return ledger ? ledgerMeta(ledger) : { label: "—", variant: "secondary" };
+}
 
 /**
  * 账单流水。
@@ -55,33 +54,54 @@ export default function PanelBilling() {
   const [keyword, setKeyword] = createSignal("");
   const [model, setModel] = createSignal("all");
   const [status, setStatus] = createSignal<StatusFilter>("all");
-  const [ledger, setLedger] = createSignal<LedgerFilter>("all");
+  const [charge, setCharge] = createSignal<ChargeFilter>("all");
   const [page, setPage] = createSignal(1);
   const [pageSize, setPageSize] = createSignal(PAGE_SIZE);
 
-  const filtered = createMemo(() => {
-    const query = keyword().trim().toLowerCase();
-    return billingRecords.filter(record => {
-      const matchStatus = status() === "all" || record.status === status();
-      const matchLedger = ledger() === "all" || record.ledger === ledger();
-      const matchModel = model() === "all" || record.model === model();
-      const matchQuery =
-        query === "" ||
-        record.request_id.toLowerCase().includes(query) ||
-        record.model.toLowerCase().includes(query);
-      return matchStatus && matchLedger && matchModel && matchQuery;
-    });
-  });
+  const hasFilter = () =>
+    keyword().trim() !== "" || model() !== "all" || status() !== "all" || charge() !== "all";
 
-  const paged = createMemo(() => filtered().slice((page() - 1) * pageSize(), page() * pageSize()));
-  const revenueTotal = () =>
-    filtered().reduce((sum, record) => sum + record.revenue_amount, 0);
+  // 账单在服务端筛选与分页；模型下拉复用请求记录的筛选项（账单里的模型是它的子集）
+  const list = createClientResource(
+    () => {
+      const chargeValue = charge();
+      return getBillingRecords({
+        page: page(),
+        size: pageSize(),
+        request_id: keyword().trim() || undefined,
+        model: model() === "all" ? undefined : model(),
+        status: status() === "all" ? undefined : status(),
+        charge: chargeValue === "all" ? undefined : chargeValue,
+      });
+    },
+    { items: [] as BillingRecord[], total: 0 },
+  );
+
+  const filters = createClientResource(getRequestRecordFilters, { models: [], user_agents: [] });
+
+  // 筛选或页码一变就重新请求；首次挂载由 createClientResource 自己拉，defer 避免拉两次
+  createEffect(
+    on(
+      () => [keyword(), model(), status(), charge(), page(), pageSize()],
+      () => {
+        void list.reload();
+      },
+      { defer: true },
+    ),
+  );
+
+  const modelOptions = () => [
+    { value: "all", label: "全部模型" },
+    ...filters.data().models.map(value => ({ value, label: value })),
+  ];
+
+  const pageRevenue = () => list.data().items.reduce((sum, record) => sum + record.revenue_amount, 0);
 
   const reset = () => {
     setKeyword("");
     setModel("all");
     setStatus("all");
-    setLedger("all");
+    setCharge("all");
     setPage(1);
   };
 
@@ -116,19 +136,19 @@ export default function PanelBilling() {
             ariaLabel="按状态筛选"
           />
           <Segmented
-            options={LEDGER_TABS}
-            value={ledger()}
+            options={CHARGE_TABS}
+            value={charge()}
             onChange={value => {
-              setLedger(value);
+              setCharge(value);
               setPage(1);
             }}
-            ariaLabel="按扣费方式筛选"
+            ariaLabel="按计费与否筛选"
           />
           <Select
             label="模型"
             labelPlacement="inline"
             class="w-full sm:w-44"
-            options={MODEL_OPTIONS}
+            options={modelOptions()}
             value={model()}
             onChange={value => {
               setModel(value);
@@ -140,8 +160,14 @@ export default function PanelBilling() {
           </Button>
         </div>
 
+        <Show when={list.error()}>
+          <p class="border-b bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
+            {list.error()}
+          </p>
+        </Show>
+
         <ResponsiveTable
-          items={paged()}
+          items={list.data().items}
           rowKey={record => record.id}
           minWidth="min-w-[960px]"
           columns={[
@@ -166,11 +192,10 @@ export default function PanelBilling() {
             },
             {
               header: "支付",
-              cell: record => (
-                <Badge variant={ledgerMeta(record.ledger).variant}>
-                  {ledgerMeta(record.ledger).label}
-                </Badge>
-              ),
+              cell: record => {
+                const meta = ledgerBadge(record.ledger);
+                return <Badge variant={meta.variant}>{meta.label}</Badge>;
+              },
             },
             {
               header: "成本（积分）",
@@ -195,9 +220,9 @@ export default function PanelBilling() {
               ),
             },
           ]}
-          cardTitle={record => record.model}
+          cardTitle={record => record.model ?? "未知模型"}
           cardSubtitle={record =>
-            `${ledgerMeta(record.ledger).label} · ${formatNumber(record.total_tokens)} tok · ${formatRelativeTime(record.created_at)}`
+            `${ledgerBadge(record.ledger).label} · ${formatNumber(record.total_tokens)} tok · ${formatRelativeTime(record.created_at)}`
           }
           cardRight={record => (
             <span class="text-right">
@@ -208,34 +233,26 @@ export default function PanelBilling() {
           actions={record => (
             <Sheet
               trigger="流水详情"
-              title={record.model}
+              title={record.model ?? "未知模型"}
               description={`${record.request_id} · ${formatDateTime(record.created_at)}`}
               footer={<SheetClose>关闭</SheetClose>}
             >
               <BillingDetail record={record} />
             </Sheet>
           )}
-          empty={
-            keyword() || status() !== "all" || ledger() !== "all" || model() !== "all"
-              ? "没有匹配的记录"
-              : "暂无流水"
-          }
-          emptyDescription={
-            keyword() || status() !== "all" || ledger() !== "all" || model() !== "all"
-              ? "试试调整搜索词或筛选条件"
-              : "还没有产生计费记录"
-          }
+          empty={hasFilter() ? "没有匹配的记录" : "暂无流水"}
+          emptyDescription={hasFilter() ? "试试调整搜索词或筛选条件" : "还没有产生计费记录"}
         />
 
         <div class="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/60 px-5 py-3">
           <p class="text-sm text-muted-foreground">
-            筛选出 {formatNumber(filtered().length)} 条，本次消耗{" "}
-            <DecimalSplit text={formatPoints(revenueTotal())} /> 积分
+            本页 {formatNumber(list.data().items.length)} 条，消耗{" "}
+            <DecimalSplit text={formatPoints(pageRevenue())} /> 积分（共 {formatNumber(list.data().total)} 条）
           </p>
           <PagerIfNeeded
             page={page()}
             size={pageSize()}
-            total={filtered().length}
+            total={list.data().total}
             onPageChange={setPage}
             onSizeChange={value => {
               setPageSize(value);
@@ -259,8 +276,8 @@ function BillingDetail(props: { record: BillingRecord }) {
         <Badge variant={billingStatusMeta(record().status).variant}>
           {billingStatusMeta(record().status).label}
         </Badge>
-        <Badge variant={ledgerMeta(record().ledger).variant}>
-          {ledgerMeta(record().ledger).label}
+        <Badge variant={ledgerBadge(record().ledger).variant}>
+          {ledgerBadge(record().ledger).label}
         </Badge>
         <Badge variant="secondary">{record().stream ? "流式" : "非流式"}</Badge>
         <Badge variant="secondary">{record().entry}</Badge>
@@ -285,7 +302,7 @@ function BillingDetail(props: { record: BillingRecord }) {
       <Section title="计费明细">
         <dl class="space-y-2.5 text-sm">
           <DetailRow label="计费模式" value={record().billing_mode === "subscription" ? "订阅" : "按量"} />
-          <DetailRow label="支付方式" value={ledgerMeta(record().ledger).label} />
+          <DetailRow label="支付方式" value={ledgerBadge(record().ledger).label} />
           <DetailRow
             label="成本"
             value={<DecimalSplit text={formatPoints(record().cost_amount)} />}

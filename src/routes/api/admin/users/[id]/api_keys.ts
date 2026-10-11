@@ -6,6 +6,7 @@ import { db } from "~/lib/db";
 import { errorJson, json } from "~/lib/http";
 import { generateApiKey, publicApiKey } from "~/lib/ledger";
 import { apiKeys, users } from "~/lib/schema";
+import { patchApiKey } from "~/routes/api/user/api_keys";
 
 function parseId(raw: string | undefined) {
   const id = Number(raw);
@@ -101,4 +102,37 @@ export async function POST({ request, params }: APIEvent) {
       expires_at: input.expiresAt,
     },
   });
+}
+
+/**
+ * PATCH /api/admin/users/{id}/api_keys
+ *
+ * 路径里的 {id} 是用户 id（与同文件的 GET/POST 一致），要改哪把密钥放在 body 的 `key_id`。
+ * 可改属性与 /admin/api_keys/{id}、/user/api_keys/{id} 完全一致，共用 patchApiKey。
+ *
+ * key_id 必须属于这个用户：patchApiKey 带上 user_id 过滤，命中别人的密钥按不存在回 404，
+ * 免得拿这个端点绕开 /admin/api_keys/{id} 的范围校验。
+ */
+export async function PATCH({ request, params }: APIEvent) {
+  const guard = await guardAdmin(request);
+  if ("error" in guard) return guard.error;
+
+  const userId = parseId(params.id);
+  if (!userId) return errorJson("用户 id 不合法", 400);
+
+  const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, userId)).limit(1);
+  if (!user) return errorJson("用户不存在", 404);
+
+  let body: Record<string, unknown> | null = null;
+  try {
+    body = await request.json();
+  } catch {
+    return errorJson("请求体不是合法 JSON", 400);
+  }
+
+  const keyIdRaw = body?.key_id ?? body?.id;
+  const keyId = Number(keyIdRaw);
+  if (!Number.isInteger(keyId) || keyId <= 0) return errorJson("key_id 必须是正整数", 400);
+
+  return patchApiKey(keyId, body, { userId });
 }

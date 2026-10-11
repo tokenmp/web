@@ -1,8 +1,9 @@
 import { Title } from "@solidjs/meta";
 import { A, createAsync } from "@solidjs/router";
 import ChevronRight from "lucide-solid/icons/chevron-right";
+import KeyRound from "lucide-solid/icons/key-round";
 import LogOut from "lucide-solid/icons/log-out";
-import { For, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 
 import { VersionLabel } from "~/components/layout/app-shell";
 import { PageHeader } from "~/components/layout/page-header";
@@ -12,9 +13,19 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { DecimalSplit } from "~/components/ui/decimal-split";
-import { currentPlan, panelMe } from "~/lib/panel-data";
+import { Dialog } from "~/components/ui/dialog";
+import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
 import { planModeMeta } from "~/lib/panel-labels";
+import { createClientResource } from "~/lib/resource";
 import { getCurrentUser } from "~/lib/session";
+import {
+  changePassword,
+  emptyPlans,
+  fetchMe,
+  fetchPlans,
+  type PanelMe,
+} from "~/lib/user-panel";
 import { BUDGET_PERIOD_LABEL, formatDate, formatPoints, formatYuan } from "~/lib/utils";
 
 const SERVICE_LINKS = [
@@ -34,19 +45,68 @@ const SERVICE_LINKS = [
  * 手机端的顶栏只有一个标题和一个铃铛，登出与换主题收在这里 ——
  * 线上也是这么分的（登出不放顶栏）。
  */
-export default function PanelMe() {
+function PanelMePage() {
   const user = createAsync(() => getCurrentUser());
+  const me = createClientResource<PanelMe | null>(fetchMe, null);
+  const plans = createClientResource(fetchPlans, emptyPlans);
 
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.assign("/");
   };
 
-  const budget = () => panelMe.budget;
+  const accountName = () => me.data()?.name ?? user()?.name ?? "未登录";
+  const accountEmail = () => me.data()?.email ?? user()?.email ?? "";
+  const accountRole = () => me.data()?.role ?? user()?.role;
+  const accountCreatedAt = () => me.data()?.created_at ?? user()?.created_at;
+
+  const current = () => plans.data().current;
+  const budget = () => me.data()?.budget;
   const budgetRate = () => {
     const value = budget();
     if (!value || value.amount <= 0) return 0;
     return value.used / value.amount;
+  };
+  const quotaRate = () => {
+    const value = current();
+    if (!value || value.quota_limit <= 0) return 0;
+    return value.quota_used / value.quota_limit;
+  };
+
+  /* ------------------------------------------------------------ 改密码 */
+  const [pwOpen, setPwOpen] = createSignal(false);
+  const [oldPassword, setOldPassword] = createSignal("");
+  const [newPassword, setNewPassword] = createSignal("");
+  const [confirmPassword, setConfirmPassword] = createSignal("");
+  const [pwBusy, setPwBusy] = createSignal(false);
+  const [pwError, setPwError] = createSignal("");
+  const [pwDone, setPwDone] = createSignal(false);
+
+  const openPassword = () => {
+    setPwError("");
+    setOldPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPwOpen(true);
+  };
+
+  const submitPassword = async () => {
+    setPwError("");
+    if (!oldPassword()) return setPwError("请先填写原密码");
+    if (newPassword().length < 8) return setPwError("新密码至少 8 位");
+    if (newPassword() !== confirmPassword()) return setPwError("两次输入的新密码不一致");
+
+    setPwBusy(true);
+    try {
+      // 成功后后端重写了 cookie，当前这台仍是登录态；其他设备下次请求会被 401
+      await changePassword({ old_password: oldPassword(), new_password: newPassword() });
+      setPwDone(true);
+      setPwOpen(false);
+    } catch (err) {
+      setPwError(err instanceof Error ? err.message : "修改密码失败");
+    } finally {
+      setPwBusy(false);
+    }
   };
 
   return (
@@ -59,27 +119,30 @@ export default function PanelMe() {
         <Card class="p-5">
           <div class="flex items-center gap-3">
             <span class="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-lg font-semibold text-primary-foreground">
-              {(user()?.name ?? "U").slice(0, 1).toUpperCase()}
+              {accountName().slice(0, 1).toUpperCase()}
             </span>
             <div class="min-w-0">
-              <p class="truncate text-base font-semibold tracking-tight">
-                {user()?.name ?? "未登录"}
-              </p>
+              <p class="truncate text-base font-semibold tracking-tight">{accountName()}</p>
               <p class="truncate text-xs text-muted-foreground">
-                {user()?.email ?? "未设置邮箱"}
+                {accountEmail() || "未设置邮箱"}
               </p>
               <p class="mt-0.5 text-xs text-muted-foreground">
-                注册于 {formatDate(user()?.created_at ?? panelMe.created_at)}
+                注册于 {formatDate(accountCreatedAt())}
               </p>
             </div>
           </div>
 
           <div class="mt-4 flex flex-wrap gap-2">
-            <Badge variant={planModeMeta(currentPlan.plan.mode).variant}>
-              {planModeMeta(currentPlan.plan.mode).label}中
-            </Badge>
-            <Badge variant="secondary">{currentPlan.plan.name}</Badge>
-            <Show when={user()?.role === "admin"}>
+            <Show
+              when={current()}
+              fallback={<Badge variant="secondary">未订阅套餐</Badge>}
+            >
+              <Badge variant={planModeMeta(current()!.plan.mode).variant}>
+                {planModeMeta(current()!.plan.mode).label}中
+              </Badge>
+              <Badge variant="secondary">{current()!.plan.name}</Badge>
+            </Show>
+            <Show when={accountRole() === "admin"}>
               <Badge variant="outline">管理员</Badge>
             </Show>
           </div>
@@ -100,28 +163,37 @@ export default function PanelMe() {
             </A>
           </div>
 
-          <p class="mt-3 text-2xl font-semibold tracking-tight">
-            <DecimalSplit text={formatPoints(panelMe.balance + panelMe.credit_available)} />
-            <span class="ml-1 text-xs font-normal text-muted-foreground">积分</span>
-          </p>
+          <Show
+            when={me.data()}
+            fallback={
+              <p class="mt-3 text-sm text-muted-foreground">{me.error() ?? "加载中…"}</p>
+            }
+          >
+            <p class="mt-3 text-2xl font-semibold tracking-tight">
+              <DecimalSplit
+                text={formatPoints(me.data()!.balance + me.data()!.credit_available)}
+              />
+              <span class="ml-1 text-xs font-normal text-muted-foreground">积分</span>
+            </p>
 
-          <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
-            <div>
-              <dt class="text-muted-foreground">余额</dt>
-              <dd class="mt-0.5 font-medium">
-                <DecimalSplit text={formatPoints(panelMe.balance)} />
-              </dd>
-            </div>
-            <div>
-              <dt class="text-muted-foreground">信用额度</dt>
-              <dd class="mt-0.5 font-medium">
-                <DecimalSplit text={formatPoints(panelMe.credit_available)} />
-                <span class="ml-1 text-muted-foreground">
-                  / {formatPoints(panelMe.credit_limit)}
-                </span>
-              </dd>
-            </div>
-          </dl>
+            <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <dt class="text-muted-foreground">余额</dt>
+                <dd class="mt-0.5 font-medium">
+                  <DecimalSplit text={formatPoints(me.data()!.balance)} />
+                </dd>
+              </div>
+              <div>
+                <dt class="text-muted-foreground">信用额度</dt>
+                <dd class="mt-0.5 font-medium">
+                  <DecimalSplit text={formatPoints(me.data()!.credit_available)} />
+                  <span class="ml-1 text-muted-foreground">
+                    / {formatPoints(me.data()!.credit_limit)}
+                  </span>
+                </dd>
+              </div>
+            </dl>
+          </Show>
         </Card>
 
         <Card class="p-5">
@@ -129,8 +201,11 @@ export default function PanelMe() {
             <div>
               <h2 class="text-sm font-semibold">本周期额度</h2>
               <p class="mt-1 text-xs text-muted-foreground">
-                {currentPlan.plan.name} · 周期{" "}
-                {formatDate(currentPlan.period_start)} – {formatDate(currentPlan.period_end)}
+                {current()
+                  ? `${current()!.plan.name} · 周期 ${formatDate(current()!.period_start)} – ${formatDate(current()!.period_end)}`
+                  : plans.loading() || plans.data().plans.length === 0
+                    ? "正在读取当前订阅"
+                    : "当前没有进行中的订阅"}
               </p>
             </div>
             <A
@@ -142,33 +217,45 @@ export default function PanelMe() {
             </A>
           </div>
 
-          <div class="mt-3 flex items-center justify-between text-sm">
-            <span class="text-muted-foreground">已用</span>
-            <span>
-              <DecimalSplit text={formatPoints(currentPlan.quota_used)} /> /{" "}
-              <DecimalSplit text={formatPoints(currentPlan.quota_limit)} />
-            </span>
-          </div>
-          <div
-            class="mt-2 h-2 overflow-hidden rounded-full bg-muted"
-            role="progressbar"
-            aria-valuenow={Math.round((currentPlan.quota_used / currentPlan.quota_limit) * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="本周期额度用量"
+          <Show
+            when={current()}
+            fallback={
+              <p class="mt-3 text-sm text-muted-foreground">
+                {plans.error() ??
+                  (plans.loading() || plans.data().plans.length === 0
+                    ? "加载中…"
+                    : "到套餐页订阅一档，就有周期额度可用")}
+              </p>
+            }
           >
+            <div class="mt-3 flex items-center justify-between text-sm">
+              <span class="text-muted-foreground">已用</span>
+              <span>
+                <DecimalSplit text={formatPoints(current()!.quota_used)} /> /{" "}
+                <DecimalSplit text={formatPoints(current()!.quota_limit)} />
+              </span>
+            </div>
             <div
-              class="h-full rounded-full bg-primary"
-              style={{ width: `${Math.min(100, (currentPlan.quota_used / currentPlan.quota_limit) * 100)}%` }}
-            />
-          </div>
-          <p class="mt-2 text-xs text-muted-foreground">
-            本周期还可调用{" "}
-            <DecimalSplit
-              text={formatPoints(currentPlan.quota_limit - currentPlan.quota_used)}
-            />{" "}
-            积分 · 超出后按套餐超量策略处理
-          </p>
+              class="mt-2 h-2 overflow-hidden rounded-full bg-muted"
+              role="progressbar"
+              aria-valuenow={Math.round(quotaRate() * 100)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="本周期额度用量"
+            >
+              <div
+                class="h-full rounded-full bg-primary"
+                style={{ width: `${Math.min(100, quotaRate() * 100)}%` }}
+              />
+            </div>
+            <p class="mt-2 text-xs text-muted-foreground">
+              本周期还可调用{" "}
+              <DecimalSplit
+                text={formatPoints(current()!.quota_limit - current()!.quota_used)}
+              />{" "}
+              积分 · 超出后按套餐超量策略处理
+            </p>
+          </Show>
         </Card>
 
         <Card class="p-5">
@@ -245,6 +332,24 @@ export default function PanelMe() {
 
           <button
             type="button"
+            onClick={openPassword}
+            class="flex w-full items-center justify-between gap-3 p-4 text-left text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <span class="flex items-center gap-2.5">
+              <KeyRound class="size-4" aria-hidden="true" />
+              修改密码
+            </span>
+            <ChevronRight class="size-4 text-muted-foreground" aria-hidden="true" />
+          </button>
+
+          <Show when={pwDone()}>
+            <p class="border-t px-4 py-3 text-xs text-success-text" role="status">
+              密码已更新。其他设备上的会话已失效，需要重新登录；本机不用。
+            </p>
+          </Show>
+
+          <button
+            type="button"
             onClick={logout}
             class="flex w-full items-center gap-2.5 p-4 text-left text-sm font-medium text-destructive-text transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
@@ -254,6 +359,67 @@ export default function PanelMe() {
         </Card>
       </Section>
 
+      <Dialog
+        open={pwOpen()}
+        onOpenChange={open => {
+          if (!open) setPwOpen(false);
+        }}
+        title="修改密码"
+        description="改完后其他设备上的登录会失效，当前这台会重新签发会话，不用重新登录"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setPwOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={() => void submitPassword()} disabled={pwBusy()}>
+              {pwBusy() ? "提交中…" : "确认修改"}
+            </Button>
+          </>
+        }
+      >
+        <div class="space-y-4">
+          <div class="space-y-1.5">
+            <Label for="old-password">原密码</Label>
+            <Input
+              id="old-password"
+              type="password"
+              autocomplete="current-password"
+              value={oldPassword()}
+              onInput={event => setOldPassword(event.currentTarget.value)}
+            />
+          </div>
+          <div class="space-y-1.5">
+            <Label for="new-password">新密码</Label>
+            <Input
+              id="new-password"
+              type="password"
+              autocomplete="new-password"
+              value={newPassword()}
+              onInput={event => setNewPassword(event.currentTarget.value)}
+            />
+            <p class="text-xs text-muted-foreground">至少 8 位，与注册时的要求一致</p>
+          </div>
+          <div class="space-y-1.5">
+            <Label for="confirm-password">确认新密码</Label>
+            <Input
+              id="confirm-password"
+              type="password"
+              autocomplete="new-password"
+              value={confirmPassword()}
+              onInput={event => setConfirmPassword(event.currentTarget.value)}
+            />
+          </div>
+          <Show when={pwError()}>
+            <p
+              class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive-text"
+              role="alert"
+            >
+              {pwError()}
+            </p>
+          </Show>
+        </div>
+      </Dialog>
+
       <div class="mt-5 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <p>积分口径 1 元 = 10000 积分。余额与信用按元存储，这里换算成积分显示。</p>
         <VersionLabel />
@@ -261,3 +427,8 @@ export default function PanelMe() {
     </>
   );
 }
+
+// 组件名与从 ~/lib/user-panel 导入的 type PanelMe 撞名，所以这里叫 PanelMePage。
+// 默认导出放在末尾：写成 `export default function X()` 时 oxc-parser 会把它误判成
+// 类型导出，路由扫描会把这一条悄悄丢掉（页面直接 404，构建里一句警告都没有）。
+export default PanelMePage;

@@ -1,3 +1,4 @@
+import Bell from "lucide-solid/icons/bell";
 import ClipboardCheck from "lucide-solid/icons/clipboard-check";
 import KeyRound from "lucide-solid/icons/key-round";
 import LayoutDashboard from "lucide-solid/icons/layout-dashboard";
@@ -58,4 +59,5 @@ export const dashboardNav: NavItem[] = [
     label: "公告",
     icon: () => <Megaphone class="size-4" />,
   },
+  { href: "/dashboard/notifications", label: "通知", icon: () => <Bell class="size-4" /> },
 ];

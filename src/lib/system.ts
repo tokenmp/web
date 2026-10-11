@@ -5,6 +5,8 @@
  * 请求都是同源的，会话 cookie 由浏览器自己带上，不用再设 Authorization。
  */
 
+import { ApiError, request } from "./api-client";
+
 export type Severity = "info" | "warning" | "urgent";
 
 /** 级别公告和通知共用一份，前端不再各写一套映射 */
@@ -65,37 +67,8 @@ export type NotificationFeed = {
   unread: number;
 };
 
-export class ApiError extends Error {
-  status: number;
-
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-  }
-}
-
-/**
- * 统一的请求封装。接口的错误信封是 {error}，取出来当异常信息，
- * 调用方不用每个地方都判断 res.ok。
- */
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers);
-  if (init?.body) headers.set("content-type", "application/json");
-
-  const res = await fetch(path, { ...init, headers });
-  const payload: unknown = await res.json().catch(() => null);
-
-  if (!res.ok) {
-    const message =
-      payload && typeof payload === "object" && "error" in payload
-        ? String((payload as { error: unknown }).error)
-        : `请求失败（${res.status}）`;
-    throw new ApiError(message, res.status);
-  }
-
-  return payload as T;
-}
+/** 请求客户端与 ApiError 都在 src/lib/api-client.ts，这里原样转出，免得改调用方 */
+export { ApiError, request };
 
 /* ------------------------------------------------------------------ 版本 */
 

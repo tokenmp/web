@@ -1,5 +1,38 @@
 # TokenMP 销售控制台功能缺口清单
 
+> 这一份是首轮排查的结果。之后已按它开了 13 条 issue（#20 到 #32）并做掉了一轮，
+> 已完成的部分见下面「已完成」一节；本文件其余内容保留为当时的记录。
+
+## 已完成（对照 issue）
+
+| issue | 内容 | 状态 |
+| --- | --- | --- |
+| [#20](https://github.com/tokenmp/web/issues/20) | 控制台用户页接线（含禁用与启用入口） | 已做 |
+| [#21](https://github.com/tokenmp/web/issues/21) | 控制台余额页接线（调账、代充、批量、记录） | 已做 |
+| [#22](https://github.com/tokenmp/web/issues/22) | 控制台套餐页接线 | 已做 |
+| [#23](https://github.com/tokenmp/web/issues/23) | 用户面板四页接线 | 已做 |
+| [#24](https://github.com/tokenmp/web/issues/24) | 补 `POST /api/auth/password` | 已做 |
+| [#25](https://github.com/tokenmp/web/issues/25) | keyword 同时匹配用户名与邮箱 | 已做 |
+| [#26](https://github.com/tokenmp/web/issues/26) | 订阅取消与退款 | 已做 |
+| [#27](https://github.com/tokenmp/web/issues/27) | 密钥停用与属性编辑 | 已做 |
+| [#28](https://github.com/tokenmp/web/issues/28) | 套餐升降级按剩余周期折算 | 已做 |
+| [#29](https://github.com/tokenmp/web/issues/29) | 用户自助充值（模拟渠道） | 已做 |
+| [#30](https://github.com/tokenmp/web/issues/30) | 用量与账单：表、摄入、查询、页面 | 已做，等网关回写才有真数据 |
+| [#31](https://github.com/tokenmp/web/issues/31) | 管理端通知投递页 | 已做 |
+| [#32](https://github.com/tokenmp/web/issues/32) | 清理过期文案 | 已做 |
+
+## 这一轮新发现的缺口
+
+做上面那批的时候又摸出来几个，还没开 issue：
+
+- **已停用的套餐恢复不了。** 软删（`status=0`）之后没有启用接口，`PUT /admin/plans/{id}` 也不接受 `status`，
+  列表里用 `status=all` 能看到但救不回来。注意用户那边是有「启用」的，套餐没有，两边不对称。
+- **`GET /api/admin/users` 缺 `status` 参数。** 界面上的状态筛选只能按当前页做，该页的「共 N 条」是未筛选的总数。
+- **批量充值只作用于当前页**，因为没有批量端点。弹窗里已经写明这一点。
+- **三个数据层各自定义了 `AdminUser` 与 `fetchAdminUsers`**（`admin-users.ts`、`admin-keys.ts`、`admin-notifications.ts`），
+  功能没问题，但该合并成一处。
+- **管理端的订单视角仍然没有表。** 自助充值有了充值单，但控制台看不到充值单列表，现在用计费流水代替。
+
 ## 现状
 
 本机后端按 [接口定义](openapi.yaml) 落地了 47 个 `x-implemented: local` 端点，分六组：

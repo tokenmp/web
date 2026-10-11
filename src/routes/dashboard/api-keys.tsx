@@ -1,16 +1,20 @@
 import { Title } from "@solidjs/meta";
 import Check from "lucide-solid/icons/check";
 import Copy from "lucide-solid/icons/copy";
+import Pencil from "lucide-solid/icons/pencil";
+import Plus from "lucide-solid/icons/plus";
 import Search from "lucide-solid/icons/search";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import Trash from "lucide-solid/icons/trash";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 
 import { PageHeader, StatRow } from "~/components/layout/page-header";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
-import { Dialog, DialogClose } from "~/components/ui/dialog";
+import { Dialog } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { Select } from "~/components/ui/select";
 import {
   Table,
   TableBody,
@@ -19,244 +23,333 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { formatNumber } from "~/lib/utils";
+import { Textarea } from "~/components/ui/textarea";
+import {
+  deleteApiKey,
+  fetchAdminUsers,
+  fetchUserApiKeys,
+  issueApiKey,
+  keyState,
+  maskedKey,
+  splitModelWhitelist,
+  updateApiKey,
+  type AdminApiKey,
+  type AdminUser,
+  type ApiKeyPatch,
+  type IssuedApiKey,
+  type KeyState,
+} from "~/lib/admin-keys";
+import { createClientResource } from "~/lib/resource";
+import { formatDateTime, formatNumber, toDateTimeLocal } from "~/lib/utils";
 
-// 设计样板用的示例数据，接后端时替换
-type KeyStatus = "启用" | "已停用" | "已过期";
-
-type ApiKey = {
-  id: string;
-  name: string;
-  /** 列表里展示的脱敏形式 */
-  masked: string;
-  /** 复制按钮写进剪贴板的完整密钥 */
-  secret: string;
-  createdAt: string;
-  lastUsedAt: string;
-  status: KeyStatus;
-};
-
-const demoKeys: ApiKey[] = [
-  {
-    id: "key_a91f",
-    name: "生产环境-主密钥",
-    masked: "sk-live-····a91f",
-    secret: "sk-live-9f2c41d7b3e5a8c04d71a91f",
-    createdAt: "2025-11-08",
-    lastUsedAt: "3 分钟前",
-    status: "启用",
-  },
-  {
-    id: "key_4c72",
-    name: "生产环境-备用密钥",
-    masked: "sk-live-····4c72",
-    secret: "sk-live-18b0e6a45c9d27f3b6044c72",
-    createdAt: "2026-01-19",
-    lastUsedAt: "2 小时前",
-    status: "启用",
-  },
-  {
-    id: "key_be03",
-    name: "移动端 App",
-    masked: "sk-live-····be03",
-    secret: "sk-live-7a1f30c8e5d94b6201abbe03",
-    createdAt: "2026-02-27",
-    lastUsedAt: "昨天 22:41",
-    status: "启用",
-  },
-  {
-    id: "key_2f56",
-    name: "数据批处理任务",
-    masked: "sk-live-····2f56",
-    secret: "sk-live-4d9c02b7a6e85f13c80e2f56",
-    createdAt: "2025-09-30",
-    lastUsedAt: "5 分钟前",
-    status: "启用",
-  },
-  {
-    id: "key_c340",
-    name: "合作方-启明科技",
-    masked: "sk-live-····c340",
-    secret: "sk-live-6e27b1d93a05c8f4b72cc340",
-    createdAt: "2026-04-12",
-    lastUsedAt: "1 小时前",
-    status: "启用",
-  },
-  {
-    id: "key_7d18",
-    name: "内部压测",
-    masked: "sk-test-····7d18",
-    secret: "sk-test-3c85a0f26b4e91d78a2c7d18",
-    createdAt: "2026-03-15",
-    lastUsedAt: "12 天前",
-    status: "已停用",
-  },
-  {
-    id: "key_8ab1",
-    name: "旧版桌面客户端",
-    masked: "sk-live-····8ab1",
-    secret: "sk-live-0b47d2c68f31a95e7d4f8ab1",
-    createdAt: "2024-06-21",
-    lastUsedAt: "2026-06-21",
-    status: "已过期",
-  },
-];
-
-const permissions = [
-  "调用全部已上线模型，按平台价目表计费",
-  "查询本账户的用量明细与账单",
-  "不能修改余额、套餐与团队成员",
-];
-
-function badgeVariant(status: KeyStatus) {
-  if (status === "启用") return "success" as const;
-  if (status === "已过期") return "warning" as const;
+function stateVariant(state: KeyState) {
+  if (state === "启用") return "success" as const;
+  if (state === "已过期") return "warning" as const;
   return "secondary" as const;
 }
 
+/**
+ * 管理端 API 密钥。
+ *
+ * 管理端没有「列出所有密钥」，只有「某用户的密钥列表」，所以这一页是
+ * 「先选用户，再看他的密钥」。用户下拉从 /api/admin/users 取真实的 id。
+ *
+ * 三个写操作分开：停用与启用走 PATCH 改 status（可逆，密钥留着）；
+ * 删除是硬删，单独一个按钮加确认，两者不能互相冒充。
+ */
 export default function DashboardApiKeys() {
-  const [keys, setKeys] = createSignal<ApiKey[]>(demoKeys);
-  const [keyword, setKeyword] = createSignal("");
-  const [newKeyName, setNewKeyName] = createSignal("");
-  const [copied, setCopied] = createSignal<string | null>(null);
+  const [userInput, setUserInput] = createSignal("");
+  const [userQuery, setUserQuery] = createSignal("");
 
-  const filtered = createMemo(() => {
-    const query = keyword().trim().toLowerCase();
-    if (query === "") return keys();
-    return keys().filter(
-      key => key.name.toLowerCase().includes(query) || key.masked.toLowerCase().includes(query),
-    );
+  const users = createClientResource<AdminUser[]>(
+    () => fetchAdminUsers({ size: 100, keyword: userQuery() }).then(page => page.items),
+    [],
+  );
+
+  const [selected, setSelected] = createSignal<AdminUser | null>(null);
+  const [keys, setKeys] = createSignal<AdminApiKey[]>([]);
+  const [keysLoading, setKeysLoading] = createSignal(false);
+  const [keysError, setKeysError] = createSignal<string | null>(null);
+  const [notice, setNotice] = createSignal("");
+  const [busyId, setBusyId] = createSignal<number | null>(null);
+
+  const [issueOpen, setIssueOpen] = createSignal(false);
+  const [issued, setIssued] = createSignal<IssuedApiKey | null>(null);
+  const [editing, setEditing] = createSignal<AdminApiKey | null>(null);
+  const [pendingDelete, setPendingDelete] = createSignal<AdminApiKey | null>(null);
+
+  const userOptions = createMemo(() =>
+    users.data().map(item => ({
+      value: String(item.id),
+      label: item.email ? `${item.name}（${item.email}）` : item.name,
+    })),
+  );
+
+  const stats = () => {
+    const list = keys();
+    return [
+      { label: "密钥总数", value: formatNumber(list.length) },
+      {
+        label: "启用",
+        value: formatNumber(list.filter(key => keyState(key) === "启用").length),
+      },
+      { label: "已停用", value: formatNumber(list.filter(key => key.status === 0).length) },
+      {
+        label: "已过期",
+        value: formatNumber(list.filter(key => keyState(key) === "已过期").length),
+        hint: "建议尽快轮换",
+      },
+    ];
+  };
+
+  const loadKeys = async (userId: number) => {
+    setKeysLoading(true);
+    setKeysError(null);
+    try {
+      const page = await fetchUserApiKeys(userId);
+      setKeys(page.items ?? []);
+    } catch (err) {
+      setKeys([]);
+      setKeysError(err instanceof Error ? err.message : "加载失败");
+    } finally {
+      setKeysLoading(false);
+    }
+  };
+
+  const selectUser = (user: AdminUser) => {
+    setNotice("");
+    setSelected(user);
+    void loadKeys(user.id);
+  };
+
+  // 用户列表回来之后默认选中第一个，页面不留一个空表
+  createEffect(() => {
+    if (selected() !== null) return;
+    const first = users.data()[0];
+    if (first) selectUser(first);
   });
 
-  const stats = createMemo(() => [
-    { label: "密钥总数", value: formatNumber(keys().length), hint: "含已停用与已过期" },
-    { label: "今日调用", value: formatNumber(412860), hint: "较昨日 +6.4%" },
-    {
-      label: "活跃密钥",
-      value: formatNumber(keys().filter(key => key.status === "启用").length),
-      hint: "近 7 天有调用",
-    },
-    {
-      label: "已过期",
-      value: formatNumber(keys().filter(key => key.status === "已过期").length),
-      hint: "建议尽快轮换",
-    },
-  ]);
+  const run = async (key: AdminApiKey, action: () => Promise<unknown>, fallback: string) => {
+    setBusyId(key.id);
+    setNotice("");
+    try {
+      await action();
+      await loadKeys(key.user_id);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : fallback);
+    } finally {
+      setBusyId(null);
+    }
+  };
 
-  function handleCopy(key: ApiKey) {
-    void navigator.clipboard?.writeText(key.secret).catch(() => undefined);
-    setCopied(key.id);
-    window.setTimeout(() => setCopied(current => (current === key.id ? null : current)), 1500);
-  }
+  const remove = async () => {
+    const key = pendingDelete();
+    if (!key) return;
 
-  function handleRevoke(key: ApiKey) {
-    const revoked: KeyStatus = "已停用";
-    setKeys(list => list.map(item => (item.id === key.id ? { ...item, status: revoked } : item)));
-  }
+    setBusyId(key.id);
+    setNotice("");
+    try {
+      await deleteApiKey(key.id);
+      setPendingDelete(null);
+      await loadKeys(key.user_id);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "删除失败");
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   return (
     <>
       <Title>API 密钥 | TokenMP 销售控制台</Title>
 
-      <PageHeader description="为应用和合作方签发调用凭证，随时停用或轮换" />
+      <PageHeader description="管理端按用户查密钥：先选用户，再签发、停用或删除">
+        <Button disabled={selected() === null} onClick={() => setIssueOpen(true)}>
+          <Plus class="size-4" aria-hidden="true" />
+          签发密钥
+        </Button>
+      </PageHeader>
 
       <StatRow items={stats()} />
 
       <Card class="overflow-hidden">
-        <div class="flex flex-wrap items-center gap-2 border-b p-4">
-          <div class="relative w-full sm:w-64">
-            <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              class="pl-8"
-              aria-label="按名称或密钥搜索"
-              placeholder="按名称或密钥搜索"
-              value={keyword()}
-              onInput={event => setKeyword(event.currentTarget.value)}
+        <div class="flex flex-wrap items-end gap-3 border-b p-4">
+          <form
+            class="flex items-end gap-2"
+            onSubmit={event => {
+              event.preventDefault();
+              setUserQuery(userInput().trim());
+              void users.reload();
+            }}
+          >
+            <div class="space-y-1.5">
+              <Label for="key-user-search">按用户名找用户</Label>
+              <div class="relative w-full sm:w-56">
+                <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="key-user-search"
+                  class="pl-8"
+                  placeholder="用户名，可留空"
+                  value={userInput()}
+                  onInput={event => setUserInput(event.currentTarget.value)}
+                />
+              </div>
+            </div>
+            <Button type="submit" variant="outline">
+              查询
+            </Button>
+          </form>
+
+          <div class="min-w-56 flex-1">
+            <Select
+              label="用户"
+              options={userOptions()}
+              value={selected() ? String(selected()!.id) : null}
+              onChange={value => {
+                const user = users.data().find(item => String(item.id) === value);
+                if (user) selectUser(user);
+              }}
+              placeholder={users.loading() ? "加载中…" : "选择要管理密钥的用户"}
+              disabled={users.data().length === 0}
             />
           </div>
 
-          <div class="ml-auto">
-            <Dialog
-              trigger="新建密钥"
-              title="新建 API 密钥"
-              description="完整密钥只在创建时显示一次，生成后请立刻保存到安全的位置。"
-              footer={
-                <>
-                  <DialogClose>取消</DialogClose>
-                  <DialogClose variant="default">生成</DialogClose>
-                </>
-              }
-            >
-              <div class="space-y-4">
-                <div class="space-y-2">
-                  <Label for="new-key-name">密钥名称</Label>
-                  <Input
-                    id="new-key-name"
-                    placeholder="例如：生产环境-主密钥"
-                    value={newKeyName()}
-                    onInput={event => setNewKeyName(event.currentTarget.value)}
-                  />
-                </div>
-
-                <div class="space-y-2">
-                  <p class="text-sm font-medium">权限说明</p>
-                  <ul class="space-y-2 rounded-lg bg-muted/60 p-3">
-                    <For each={permissions}>
-                      {item => (
-                        <li class="flex items-start gap-2 text-xs text-muted-foreground">
-                          <Check class="mt-0.5 size-3.5 shrink-0 text-success-text" />
-                          <span>{item}</span>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </div>
-              </div>
-            </Dialog>
-          </div>
+          <Show when={selected()}>
+            {user => (
+              <p class="pb-1 text-sm text-muted-foreground">
+                #{user().id} · {user().name}
+                <Show when={user().status === 0}>
+                  <Badge variant="secondary" class="ml-2">
+                    账号已停用
+                  </Badge>
+                </Show>
+              </p>
+            )}
+          </Show>
         </div>
 
-        <Table tableClass="min-w-[820px]">
+        <Show when={notice()}>
+          <p
+            class="border-b bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text"
+            role="alert"
+          >
+            {notice()}
+          </p>
+        </Show>
+
+        <Show when={users.error()}>
+          <div class="border-b px-4 py-6 text-center text-sm">
+            <p class="text-muted-foreground">{users.error()}</p>
+            <Button variant="outline" size="sm" class="mt-3" onClick={() => void users.reload()}>
+              重新加载用户
+            </Button>
+          </div>
+        </Show>
+
+        <Show when={keysError()}>
+          <div class="border-b px-4 py-6 text-center text-sm">
+            <p class="text-muted-foreground">{keysError()}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              class="mt-3"
+              onClick={() => {
+                const user = selected();
+                if (user) void loadKeys(user.id);
+              }}
+            >
+              重新加载密钥
+            </Button>
+          </div>
+        </Show>
+
+        <Table class="border-b" tableClass="min-w-[1000px]">
           <TableHeader>
             <TableRow>
               <TableHead>名称</TableHead>
               <TableHead>密钥</TableHead>
-              <TableHead>创建时间</TableHead>
-              <TableHead>最近使用</TableHead>
               <TableHead>状态</TableHead>
+              <TableHead>模型白名单</TableHead>
+              <TableHead>限速</TableHead>
+              <TableHead>过期时间</TableHead>
+              <TableHead>最近使用</TableHead>
               <TableHead class="text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            <For each={filtered()}>
+            <For each={keys()}>
               {key => (
                 <TableRow>
-                  <TableCell class="font-medium">{key.name}</TableCell>
-                  <TableCell class="font-mono text-xs text-muted-foreground">{key.masked}</TableCell>
-                  <TableCell class="tabular-nums text-muted-foreground">{key.createdAt}</TableCell>
-                  <TableCell class="tabular-nums text-muted-foreground">{key.lastUsedAt}</TableCell>
-                  <TableCell>
-                    <Badge variant={badgeVariant(key.status)}>{key.status}</Badge>
+                  <TableCell class="font-medium">
+                    {key.name ?? "未命名"}
+                    <p class="mt-0.5 text-xs text-muted-foreground">
+                      创建于 {formatDateTime(key.created_at)}
+                    </p>
+                  </TableCell>
+                  <TableCell class="font-mono text-xs text-muted-foreground">
+                    {maskedKey(key)}
                   </TableCell>
                   <TableCell>
-                    <div class="flex items-center justify-end gap-1">
+                    <Badge variant={stateVariant(keyState(key))}>{keyState(key)}</Badge>
+                  </TableCell>
+                  <TableCell class="text-xs text-muted-foreground">
+                    <Show
+                      when={key.model_whitelist && key.model_whitelist.length > 0}
+                      fallback={<>不限</>}
+                    >
+                      <span class="line-clamp-1 max-w-[16rem]" title={key.model_whitelist?.join(", ")}>
+                        {key.model_whitelist?.join(", ")}
+                      </span>
+                    </Show>
+                  </TableCell>
+                  <TableCell class="tabular-nums text-muted-foreground">
+                    {key.rate_limit_per_min ? `${key.rate_limit_per_min} 次/分` : "不限"}
+                  </TableCell>
+                  <TableCell class="whitespace-nowrap tabular-nums text-muted-foreground">
+                    {key.expires_at ? formatDateTime(key.expires_at) : "永不过期"}
+                  </TableCell>
+                  <TableCell class="whitespace-nowrap tabular-nums text-muted-foreground">
+                    {key.last_used_at ? formatDateTime(key.last_used_at) : "从未使用"}
+                  </TableCell>
+                  <TableCell>
+                    <div class="flex items-center justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busyId() === key.id}
+                        aria-label={`${key.status === 0 ? "启用" : "停用"}密钥：${key.name ?? maskedKey(key)}`}
+                        onClick={() =>
+                          run(
+                            key,
+                            () => updateApiKey(key.id, { status: key.status === 0 ? 1 : 0 }),
+                            "操作失败",
+                          )
+                        }
+                      >
+                        {key.status === 0 ? "启用" : "停用"}
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busyId() === key.id}
+                        aria-label={`编辑密钥：${key.name ?? maskedKey(key)}`}
+                        onClick={() => setEditing(key)}
+                      >
+                        <Pencil class="size-3.5" aria-hidden="true" />
+                        编辑
+                      </Button>
+
                       <Button
                         variant="ghost"
-                        size="icon"
-                        aria-label={copied() === key.id ? "已复制密钥" : "复制完整密钥"}
-                        onClick={() => handleCopy(key)}
-                      >
-                        <Show when={copied() === key.id} fallback={<Copy class="size-4" />}>
-                          <Check class="size-4 text-success-text" />
-                        </Show>
-                      </Button>
-                      <Button
-                        variant="link"
                         size="sm"
-                        disabled={key.status !== "启用"}
-                        onClick={() => handleRevoke(key)}
+                        class="text-destructive-text"
+                        disabled={busyId() === key.id}
+                        aria-label={`删除密钥：${key.name ?? maskedKey(key)}`}
+                        onClick={() => setPendingDelete(key)}
                       >
-                        停用
+                        <Trash class="size-3.5" aria-hidden="true" />
+                        删除
                       </Button>
                     </div>
                   </TableCell>
@@ -264,20 +357,361 @@ export default function DashboardApiKeys() {
               )}
             </For>
 
-            <Show when={filtered().length === 0}>
+            <Show when={keys().length === 0}>
               <TableRow>
-                <TableCell class="py-10 text-center text-muted-foreground" colSpan={6}>
-                  没有匹配的密钥，换个名称关键词试试
+                <TableCell class="py-10 text-center text-muted-foreground" colSpan={8}>
+                  {!selected()
+                    ? "先在上面选一个用户"
+                    : keysLoading()
+                      ? "正在加载…"
+                      : "这个用户还没有密钥，点右上角「签发密钥」给他签一把"}
                 </TableCell>
               </TableRow>
             </Show>
           </TableBody>
         </Table>
-
-        <div class="border-t px-5 py-3 text-sm text-muted-foreground">
-          共 {formatNumber(keys().length)} 个密钥，其中 {formatNumber(2)} 个超过 180 天未轮换
-        </div>
       </Card>
+
+      <IssueKeyDialog
+        open={issueOpen()}
+        user={selected()}
+        onOpenChange={setIssueOpen}
+        onIssued={issued => {
+          setIssued(issued);
+          const user = selected();
+          if (user) void loadKeys(user.id);
+        }}
+      />
+
+      <KeyEditDialog
+        item={editing()}
+        onOpenChange={open => {
+          if (!open) setEditing(null);
+        }}
+        onSaved={() => {
+          const key = editing();
+          setEditing(null);
+          if (key) void loadKeys(key.user_id);
+        }}
+      />
+
+      <Dialog
+        open={pendingDelete() !== null}
+        onOpenChange={open => {
+          if (!open) setPendingDelete(null);
+        }}
+        title="删除这把密钥？"
+        description="这是硬删，删了之后网关立刻拒掉它，历史记录里也查不到这一把了。只是想先停用的话，用列表里的「停用」。"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setPendingDelete(null)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={busyId() === pendingDelete()?.id}
+              onClick={() => void remove()}
+            >
+              确认删除
+            </Button>
+          </>
+        }
+      />
+
+      <Dialog
+        open={issued() !== null}
+        onOpenChange={open => {
+          if (!open) setIssued(null);
+        }}
+        title="密钥已签发，请立刻保存"
+        description="明文只在这一个弹窗里出现一次，关掉之后任何接口都取不回原文，只能删了重签。"
+        footer={
+          <Button onClick={() => setIssued(null)}>我已经保存好了</Button>
+        }
+      >
+        <Show when={issued()}>
+          {key => (
+            <div class="space-y-3">
+              <div class="rounded-lg border border-warning/50 bg-warning/10 p-3">
+                <p class="mb-2 text-xs font-medium text-warning-text">
+                  {key().name ?? "未命名"} · 明文密钥
+                </p>
+                <PlainKey value={key().key} />
+              </div>
+              <p class="text-xs text-muted-foreground">
+                把这段明文直接交给用户，别贴到聊天群或工单里。
+              </p>
+            </div>
+          )}
+        </Show>
+      </Dialog>
     </>
+  );
+}
+
+/** 明文密钥：等宽大字加复制按钮，签发后只此一次 */
+function PlainKey(props: { value: string }) {
+  const [copied, setCopied] = createSignal(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(props.value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div class="flex items-center gap-2">
+      <code class="min-w-0 flex-1 break-all font-mono text-sm">{props.value}</code>
+      <Button
+        variant="outline"
+        size="icon"
+        class="shrink-0"
+        aria-label="复制明文密钥"
+        onClick={() => void copy()}
+      >
+        <Show when={copied()} fallback={<Copy class="size-4" />}>
+          <Check class="size-4 text-success-text" />
+        </Show>
+      </Button>
+    </div>
+  );
+}
+
+/** 签发弹窗。成功之后不在这里显示明文，交给页面层级的弹窗，免得被关掉时一起没了 */
+function IssueKeyDialog(props: {
+  open: boolean;
+  user: AdminUser | null;
+  onOpenChange: (open: boolean) => void;
+  onIssued: (key: IssuedApiKey) => void;
+}) {
+  const [name, setName] = createSignal("");
+  const [expiresAt, setExpiresAt] = createSignal("");
+  const [notice, setNotice] = createSignal("");
+  const [pending, setPending] = createSignal(false);
+
+  createEffect(() => {
+    if (!props.open) return;
+    setName("");
+    setExpiresAt("");
+    setNotice("");
+    setPending(false);
+  });
+
+  const submit = async () => {
+    const user = props.user;
+    if (!user || pending()) return;
+
+    setPending(true);
+    setNotice("");
+    try {
+      const created = await issueApiKey(user.id, {
+        name: name().trim() || undefined,
+        expires_at: expiresAt() ? new Date(expiresAt()).toISOString() : null,
+      });
+      props.onOpenChange(false);
+      props.onIssued(created);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "签发失败");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={props.open}
+      onOpenChange={props.onOpenChange}
+      title="签发新密钥"
+      description={
+        props.user
+          ? `签给 ${props.user.name}（#${props.user.id}）。明文只在提交后的弹窗里出现一次。`
+          : "先选一个用户"
+      }
+      footer={
+        <>
+          <Button variant="outline" onClick={() => props.onOpenChange(false)}>
+            取消
+          </Button>
+          <Button disabled={pending() || !props.user} onClick={() => void submit()}>
+            {pending() ? "签发中…" : "签发"}
+          </Button>
+        </>
+      }
+    >
+      <form
+        class="space-y-4"
+        onSubmit={event => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        <div class="space-y-1.5">
+          <Label for="issue-key-name">密钥名称</Label>
+          <Input
+            id="issue-key-name"
+            maxLength={64}
+            placeholder="例如：生产环境-主密钥"
+            value={name()}
+            onInput={event => setName(event.currentTarget.value)}
+          />
+          <p class="text-xs text-muted-foreground">留空也可以，之后能在「编辑」里补</p>
+        </div>
+
+        <div class="space-y-1.5">
+          <Label for="issue-key-expires">过期时间</Label>
+          <Input
+            id="issue-key-expires"
+            type="datetime-local"
+            value={expiresAt()}
+            onInput={event => setExpiresAt(event.currentTarget.value)}
+          />
+          <p class="text-xs text-muted-foreground">留空表示永不过期</p>
+        </div>
+
+        <Show when={notice()}>
+          <p class="text-sm text-destructive-text" role="alert">
+            {notice()}
+          </p>
+        </Show>
+      </form>
+    </Dialog>
+  );
+}
+
+/** 改属性。属性是子集提交：四个字段每次一起送，空值表示清掉该限制 */
+function KeyEditDialog(props: {
+  item: AdminApiKey | null;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = createSignal("");
+  const [expiresAt, setExpiresAt] = createSignal("");
+  const [whitelist, setWhitelist] = createSignal("");
+  const [rateLimit, setRateLimit] = createSignal("");
+  const [notice, setNotice] = createSignal("");
+  const [pending, setPending] = createSignal(false);
+
+  createEffect(() => {
+    const item = props.item;
+    if (!item) return;
+    setName(item.name ?? "");
+    setExpiresAt(item.expires_at ? toDateTimeLocal(item.expires_at) : "");
+    setWhitelist(item.model_whitelist?.join(", ") ?? "");
+    setRateLimit(item.rate_limit_per_min ? String(item.rate_limit_per_min) : "");
+    setNotice("");
+    setPending(false);
+  });
+
+  const submit = async () => {
+    const item = props.item;
+    if (!item || pending()) return;
+
+    const rate = rateLimit().trim();
+    if (rate && (!/^\d+$/.test(rate) || Number(rate) <= 0)) {
+      setNotice("限速要是大于 0 的整数");
+      return;
+    }
+
+    const patch: ApiKeyPatch = {
+      name: name().trim() || null,
+      expires_at: expiresAt() ? new Date(expiresAt()).toISOString() : null,
+      model_whitelist: splitModelWhitelist(whitelist()),
+      rate_limit_per_min: rate ? Number(rate) : null,
+    };
+    if (patch.model_whitelist?.length === 0) patch.model_whitelist = null;
+
+    setPending(true);
+    setNotice("");
+    try {
+      await updateApiKey(item.id, patch);
+      props.onSaved();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={props.item !== null}
+      onOpenChange={props.onOpenChange}
+      title="编辑密钥属性"
+      description="只改填了的内容；白名单与限速清空表示恢复为不限。停用与启用请用列表里的按钮。"
+      class="max-h-[calc(100dvh-2rem)] overflow-y-auto"
+      footer={
+        <>
+          <Button variant="outline" onClick={() => props.onOpenChange(false)}>
+            取消
+          </Button>
+          <Button disabled={pending()} onClick={() => void submit()}>
+            {pending() ? "保存中…" : "保存修改"}
+          </Button>
+        </>
+      }
+    >
+      <form
+        class="space-y-4"
+        onSubmit={event => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        <div class="space-y-1.5">
+          <Label for="edit-key-name">密钥名称</Label>
+          <Input
+            id="edit-key-name"
+            maxLength={64}
+            value={name()}
+            onInput={event => setName(event.currentTarget.value)}
+          />
+        </div>
+
+        <div class="space-y-1.5">
+          <Label for="edit-key-expires">过期时间</Label>
+          <Input
+            id="edit-key-expires"
+            type="datetime-local"
+            value={expiresAt()}
+            onInput={event => setExpiresAt(event.currentTarget.value)}
+          />
+          <p class="text-xs text-muted-foreground">留空表示永不过期</p>
+        </div>
+
+        <div class="space-y-1.5">
+          <Label for="edit-key-whitelist">模型白名单</Label>
+          <Textarea
+            id="edit-key-whitelist"
+            rows={3}
+            placeholder="例如：gpt-4o, claude-sonnet-4"
+            value={whitelist()}
+            onInput={event => setWhitelist(event.currentTarget.value)}
+          />
+          <p class="text-xs text-muted-foreground">用逗号或换行分隔，留空表示不限模型</p>
+        </div>
+
+        <div class="space-y-1.5">
+          <Label for="edit-key-rate">每分钟限速</Label>
+          <Input
+            id="edit-key-rate"
+            inputmode="numeric"
+            placeholder="例如：120"
+            value={rateLimit()}
+            onInput={event => setRateLimit(event.currentTarget.value)}
+          />
+          <p class="text-xs text-muted-foreground">单位是请求数，留空表示不限速</p>
+        </div>
+
+        <Show when={notice()}>
+          <p class="text-sm text-destructive-text" role="alert">
+            {notice()}
+          </p>
+        </Show>
+      </form>
+    </Dialog>
   );
 }
