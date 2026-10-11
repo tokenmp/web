@@ -45,17 +45,27 @@ function is(label: string, actual: unknown, expected: unknown) {
   check(`${label}（期望 ${JSON.stringify(expected)}，实际 ${JSON.stringify(actual)}）`, JSON.stringify(actual) === JSON.stringify(expected));
 }
 
-/** 记下这个页面发出去的所有写请求。取消类断言全靠它 */
+/**
+ * 记下这个页面发出去的请求。写与读分开记：
+ *
+ *   writes —— 非 GET 的请求。「点了取消不该发请求」全靠它。
+ *   reads  —— GET 请求。用来判断一页到底有没有去读后端（之前这个监听把 GET 一并滤掉，
+ *             导致「用户列表页连读接口都没打」这条断言永远不可能失败，是个假通过）。
+ */
 function watchWrites(page: Page) {
   const writes: string[] = [];
+  const reads: string[] = [];
   page.on("request", req => {
     const method = req.method();
-    if (method === "GET" || method === "HEAD" || method === "OPTIONS") return;
     const url = new URL(req.url());
     if (!url.pathname.startsWith("/api/")) return;
+    if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
+      reads.push(`${method} ${url.pathname}`);
+      return;
+    }
     writes.push(`${method} ${url.pathname}`);
   });
-  return writes;
+  return { writes, reads };
 }
 
 /** 等一小会儿，给「本来不该发」的请求留出出现的时间 */
@@ -65,7 +75,9 @@ let adminId = 0;
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 const page = await context.newPage();
-const writes = watchWrites(page);
+const watched = watchWrites(page);
+const writes = watched.writes;
+const reads = watched.reads;
 
 try {
   /* ---------------------------------------------- 一、登录页的原生交互 */
@@ -197,17 +209,25 @@ try {
 
   /* ---------------------------------------------- 四、没接后端的页面 */
 
-  console.log("\n【7】用户列表页：操作一通，一个接口请求都不该有");
+  console.log("\n【7】用户列表页：应当去读后端，但点来点去不该发出写请求");
   await page.goto(`${BASE}/dashboard/users`, { waitUntil: "networkidle" });
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(800);
   writes.length = 0;
+  reads.length = 0;
 
-  const searchBox = page.locator('input[placeholder*="邮箱"]').first();
+  const searchBox = page.locator('input[placeholder*="邮箱"], input[placeholder*="用户名"]').first();
   check("用户列表页渲染出了搜索框（否则下面的断言会变成假通过）", (await searchBox.count()) > 0);
   await searchBox.fill("lin");
   await settle(page);
   await searchBox.fill("");
-  // 把页面上能点的按钮都点一遍，看有没有哪个偷偷发了请求
+  // 搜索会触发重新取数，所以读请求应当在填入后出现过
+  check(
+    "用户列表页确实读了 /api/admin/users",
+    reads.some(r => r.includes("/api/admin/users")),
+    reads.slice(0, 6),
+  );
+
+  // 把页面上能点的按钮都点一遍，看有没有哪个偷偷发了写请求
   const buttons = page.locator("button");
   const buttonCount = Math.min(await buttons.count(), 12);
   for (let i = 0; i < buttonCount; i++) {
@@ -219,12 +239,7 @@ try {
     }
   }
   await settle(page);
-  is("用户列表页没有发出任何写请求", writes.filter(w => !w.startsWith("GET ")), []);
-  check(
-    "用户列表页连读接口都没打（说明还是模拟数据）",
-    writes.filter(w => w.includes("/api/admin/users")).length === 0,
-    writes,
-  );
+  is("只点按钮不会发出写请求", writes.filter(w => !w.startsWith("GET ")), []);
 
   await page.screenshot({ path: `/tmp/ui-users-${stamp}.png` });
   console.log(`  已截图 /tmp/ui-users-${stamp}.png`);

@@ -2,7 +2,7 @@ import { Title } from "@solidjs/meta";
 import ChevronLeft from "lucide-solid/icons/chevron-left";
 import ChevronRight from "lucide-solid/icons/chevron-right";
 import Download from "lucide-solid/icons/download";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, on, Show } from "solid-js";
 
 import { PageHeader, StatRow } from "~/components/layout/page-header";
 import { Badge } from "~/components/ui/badge";
@@ -17,146 +17,118 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { formatCurrency, formatNumber } from "~/lib/utils";
+import { billingStatusMeta } from "~/lib/panel-labels";
+import { createClientResource } from "~/lib/resource";
+import { getAdminBillingRecords, type BillingRecord } from "~/lib/usage";
+import { formatCurrency, formatDateTime, formatNumber } from "~/lib/utils";
 
-// 设计样板用的示例数据，接后端时替换
-type OrderStatus = "已支付" | "待支付" | "已退款";
-
-type Order = {
-  id: string;
-  user: string;
-  plan: string;
-  amount: number;
-  method: string;
-  status: OrderStatus;
-  at: string;
-  daysAgo: number;
-};
-
-const orders: Order[] = [
-  {
-    id: "SO-20261010-0187",
-    user: "lin.zy@example.com",
-    plan: "专业版月付",
-    amount: 199,
-    method: "支付宝",
-    status: "已支付",
-    at: "10-10 14:52",
-    daysAgo: 0,
-  },
-  {
-    id: "SO-20261010-0186",
-    user: "wang.qi@example.com",
-    plan: "按量充值 $100",
-    amount: 100,
-    method: "微信支付",
-    status: "已支付",
-    at: "10-10 14:31",
-    daysAgo: 0,
-  },
-  {
-    id: "SO-20261010-0185",
-    user: "chen.mo@example.com",
-    plan: "标准版月付",
-    amount: 69,
-    method: "支付宝",
-    status: "待支付",
-    at: "10-10 13:58",
-    daysAgo: 0,
-  },
-  {
-    id: "SO-20261009-0184",
-    user: "zhao.lin@example.com",
-    plan: "专业版年付",
-    amount: 1990,
-    method: "对公转账",
-    status: "已支付",
-    at: "10-09 16:12",
-    daysAgo: 1,
-  },
-  {
-    id: "SO-20261008-0183",
-    user: "sun.yu@example.com",
-    plan: "标准版月付",
-    amount: 69,
-    method: "微信支付",
-    status: "已退款",
-    at: "10-08 12:40",
-    daysAgo: 2,
-  },
-  {
-    id: "SO-20261007-0182",
-    user: "zhou.han@example.com",
-    plan: "企业版年付",
-    amount: 19900,
-    method: "对公转账",
-    status: "已支付",
-    at: "10-07 10:05",
-    daysAgo: 3,
-  },
-  {
-    id: "SO-20261005-0181",
-    user: "wu.xin@example.com",
-    plan: "按量充值 $500",
-    amount: 500,
-    method: "信用卡",
-    status: "待支付",
-    at: "10-05 21:47",
-    daysAgo: 5,
-  },
-  {
-    id: "SO-20260928-0180",
-    user: "zheng.pei@example.com",
-    plan: "标准版年付",
-    amount: 690,
-    method: "PayPal",
-    status: "已退款",
-    at: "09-28 09:33",
-    daysAgo: 12,
-  },
-];
-
-const stats = [
-  { label: "本月收入", value: formatCurrency(486320.55), hint: "较上月 +12.4%" },
-  { label: "待支付", value: formatCurrency(18240.0), hint: "共 37 笔未结清" },
-  { label: "已退款", value: formatCurrency(3120.4), hint: "本月 9 笔" },
-  { label: "客单价", value: formatCurrency(378.62), hint: "按已支付订单计算" },
-];
+const SIZE = 20;
 
 const timeRanges = ["今天", "本周", "本月"] as const;
-const statusTabs = ["全部", "已支付", "待支付", "已退款"] as const;
+const statusTabs = ["全部", "成功", "失败", "已结算"] as const;
 
-function badgeVariant(status: OrderStatus) {
-  if (status === "已支付") return "success" as const;
-  if (status === "待支付") return "warning" as const;
-  return "destructive" as const;
+type TimeRange = (typeof timeRanges)[number];
+type StatusTab = (typeof statusTabs)[number];
+
+/** 时间范围换算成 start 参数。数据库按 UTC 存，今天取 UTC 零点 */
+function rangeStart(range: TimeRange) {
+  const now = new Date();
+  if (range === "今天") {
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+  }
+  const days = range === "本周" ? 7 : 30;
+  return new Date(now.getTime() - days * 86_400_000).toISOString();
 }
 
-export default function DashboardBilling() {
-  const [range, setRange] = createSignal<(typeof timeRanges)[number]>("本月");
-  const [status, setStatus] = createSignal<(typeof statusTabs)[number]>("全部");
+/** 账单状态。表里默认 settled，内核回写成功/失败时是 success / error */
+const STATUS_VALUES: Record<StatusTab, string | undefined> = {
+  全部: undefined,
+  成功: "success",
+  失败: "error",
+  已结算: "settled",
+};
 
-  const filtered = createMemo(() => {
-    const maxDays = range() === "今天" ? 0 : range() === "本周" ? 6 : 29;
-    return orders.filter(
-      order =>
-        order.daysAgo <= maxDays && (status() === "全部" || order.status === status()),
-    );
-  });
+/**
+ * 控制台计费。
+ *
+ * 数据来自 /api/admin/billing_records（转发内核回写的计费流水）。
+ * 原来的「订单/收款/退款」是销售订单视角，本机没有对应的表与端点；
+ * 这里按计费流水的视角重排了列，筛选与分页都走服务端。
+ *
+ * 顶部四个数是「本页」口径：分页接口只回一页的 items 与总数 total，
+ * 没有全量聚合，所以统一标注本页，不假装是全站数字。
+ */
+export default function DashboardBilling() {
+  const [range, setRange] = createSignal<TimeRange>("本月");
+  const [status, setStatus] = createSignal<StatusTab>("全部");
+  const [page, setPage] = createSignal(1);
+
+  const list = createClientResource(
+    () =>
+      getAdminBillingRecords({
+        page: page(),
+        size: SIZE,
+        start: rangeStart(range()),
+        status: STATUS_VALUES[status()],
+      }),
+    { items: [] as BillingRecord[], total: 0 },
+  );
+
+  createEffect(
+    on(
+      () => [range(), status(), page()],
+      () => {
+        void list.reload();
+      },
+      { defer: true },
+    ),
+  );
+
+  const pageTotals = () => {
+    const items = list.data().items;
+    const revenue = items.reduce((sum, row) => sum + row.revenue_amount, 0);
+    const cost = items.reduce((sum, row) => sum + row.cost_amount, 0);
+    return { revenue, cost, margin: revenue - cost };
+  };
+
+  const stats = () => [
+    { label: "本页收入", value: formatCurrency(pageTotals().revenue) },
+    { label: "本页成本", value: formatCurrency(pageTotals().cost) },
+    { label: "本页毛利", value: formatCurrency(pageTotals().margin) },
+    { label: "筛选结果", value: formatNumber(list.data().total), hint: "符合条件的总条数" },
+  ];
+
+  const totalPages = () => Math.max(1, Math.ceil(list.data().total / SIZE));
 
   return (
     <>
       <Title>计费 | TokenMP 销售控制台</Title>
 
-      <PageHeader description="订单流水、收款状态与退款记录" />
+      <PageHeader description="计费流水：成本、收入与结算状态" />
 
-      <StatRow items={stats} />
+      <StatRow items={stats()} />
 
       <Card class="overflow-hidden">
         <div class="flex flex-wrap items-center gap-2 border-b p-4">
-          <Segmented options={timeRanges} value={range()} onChange={setRange} ariaLabel="时间范围" />
+          <Segmented
+            options={timeRanges}
+            value={range()}
+            onChange={value => {
+              setRange(value);
+              setPage(1);
+            }}
+            ariaLabel="时间范围"
+          />
 
-          <Segmented options={statusTabs} value={status()} onChange={setStatus} ariaLabel="订单状态" />
+          <Segmented
+            options={statusTabs}
+            value={status()}
+            onChange={value => {
+              setStatus(value);
+              setPage(1);
+            }}
+            ariaLabel="流水状态"
+          />
 
           <Button variant="outline" class="ml-auto">
             <Download class="size-4" />
@@ -164,40 +136,54 @@ export default function DashboardBilling() {
           </Button>
         </div>
 
+        <Show when={list.error()}>
+          <p class="border-b bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
+            {list.error()}
+          </p>
+        </Show>
+
         <Table class="border-b" tableClass="min-w-[880px]">
           <TableHeader>
             <TableRow>
-              <TableHead>订单号</TableHead>
+              <TableHead>请求 ID</TableHead>
               <TableHead>用户</TableHead>
-              <TableHead>套餐</TableHead>
-              <TableHead class="text-right">金额</TableHead>
-              <TableHead>支付方式</TableHead>
+              <TableHead>模型</TableHead>
+              <TableHead>渠道</TableHead>
+              <TableHead class="text-right">成本</TableHead>
+              <TableHead class="text-right">收入</TableHead>
               <TableHead>状态</TableHead>
-              <TableHead>下单时间</TableHead>
+              <TableHead>时间</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            <For each={filtered()}>
-              {order => (
+            <For each={list.data().items}>
+              {row => (
                 <TableRow>
-                  <TableCell class="font-mono text-xs">{order.id}</TableCell>
-                  <TableCell class="font-medium">{order.user}</TableCell>
-                  <TableCell class="text-muted-foreground">{order.plan}</TableCell>
+                  <TableCell class="font-mono text-xs">{row.request_id}</TableCell>
+                  <TableCell class="tabular-nums text-muted-foreground">{row.user_id ?? "—"}</TableCell>
+                  <TableCell class="font-medium">{row.model ?? "—"}</TableCell>
+                  <TableCell class="text-muted-foreground">{row.channel_name ?? "—"}</TableCell>
+                  <TableCell class="text-right tabular-nums text-muted-foreground">
+                    {formatCurrency(row.cost_amount)}
+                  </TableCell>
                   <TableCell class="text-right tabular-nums">
-                    {formatCurrency(order.amount)}
+                    {formatCurrency(row.revenue_amount)}
                   </TableCell>
-                  <TableCell class="text-muted-foreground">{order.method}</TableCell>
                   <TableCell>
-                    <Badge variant={badgeVariant(order.status)}>{order.status}</Badge>
+                    <Badge variant={billingStatusMeta(row.status).variant}>
+                      {billingStatusMeta(row.status).label}
+                    </Badge>
                   </TableCell>
-                  <TableCell class="tabular-nums text-muted-foreground">{order.at}</TableCell>
+                  <TableCell class="tabular-nums text-muted-foreground">
+                    {formatDateTime(row.created_at)}
+                  </TableCell>
                 </TableRow>
               )}
             </For>
-            <Show when={filtered().length === 0}>
+            <Show when={list.data().items.length === 0}>
               <TableRow>
-                <TableCell class="py-10 text-center text-muted-foreground" colSpan={7}>
-                  这个时间范围下没有符合条件的订单
+                <TableCell class="py-10 text-center text-muted-foreground" colSpan={8}>
+                  这个时间范围下没有符合条件的流水
                 </TableCell>
               </TableRow>
             </Show>
@@ -206,14 +192,26 @@ export default function DashboardBilling() {
 
         <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm text-muted-foreground">
           <p aria-live="polite">
-            共 {formatNumber(1284)} 条，当前显示第 {formatNumber(1)} 到{" "}
-            {formatNumber(filtered().length)} 条
+            共 {formatNumber(list.data().total)} 条，当前第 {formatNumber(page())} /{" "}
+            {formatNumber(totalPages())} 页
           </p>
           <div class="flex items-center gap-2">
-            <Button variant="outline" size="icon" disabled aria-label="上一页">
+            <Button
+              variant="outline"
+              size="icon"
+              disabled={page() <= 1}
+              aria-label="上一页"
+              onClick={() => setPage(current => Math.max(1, current - 1))}
+            >
               <ChevronLeft class="size-4" />
             </Button>
-            <Button variant="outline" size="icon" aria-label="下一页">
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="下一页"
+              disabled={page() >= totalPages()}
+              onClick={() => setPage(current => Math.min(totalPages(), current + 1))}
+            >
               <ChevronRight class="size-4" />
             </Button>
           </div>

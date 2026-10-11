@@ -66,28 +66,36 @@ bun run dev
 | 文件 | 打什么 | 跑法 |
 | --- | --- | --- |
 | [tests/api.test.ts](tests/api.test.ts) | 直接调路由的 handler，不经过 HTTP | `bun test` |
+| [tests/routes.test.ts](tests/routes.test.ts) | 路由文件结构：每个页面能否被解析出默认导出 | `bun test` |
 | [tests/deploy-flow.ts](tests/deploy-flow.ts) | 跑起来的生产构建，走真实注册、登录与 cookie | 见下 |
 | [tests/ui-flow.ts](tests/ui-flow.ts) | 真浏览器，测点开又取消、切来切去 | 见下 |
+| [tests/ui-pages.ts](tests/ui-pages.ts) | 真浏览器，逐页验证「读的是数据库不是写死的假数据」 | 见下 |
 | [tests/deploy-mutations.ts](tests/deploy-mutations.ts) | 变异输入：类型错位、边界值、注入、越权、并发、中断 | 见下 |
 
-后三个要先起服务：
+后四个要先起服务：
 
 ```bash
 bun run build
 bun run start &
 
-bun tests/deploy-flow.ts      # 46 项，整套业务链路
-bun tests/ui-flow.ts          # 31 项，浏览器交互
-bun tests/deploy-mutations.ts # 248 项变异
+bun tests/deploy-flow.ts      # 整套业务链路
+bun tests/ui-flow.ts          # 浏览器交互
+bun tests/ui-pages.ts         # 逐页接线
+bun tests/deploy-mutations.ts # 变异
 ```
 
-四个都需要本地库在跑。每个用例自己建测试数据，命名带时间戳，跑完只删自己的，
+六个都需要本地库在跑。每个用例自己建测试数据，命名带时间戳，跑完只删自己的，
 可以反复跑。
 
-为什么分四层：handler 级快、失败信息干净，但绕过 HTTP 与 `.env` 加载，
-上面那个「生产环境必须设置 SESSION_SECRET」就是部署层才暴露的；
-HTTP 级能盖住中间件与序列化；UI 级才能回答「点了取消有没有偷偷发请求」；
-变异级拿异常输入敲边界，目前发现的溢出、类型强转、唯一键并发冲突都是它提的。
+tests/ui-pages.ts 的做法值得一提：它先用接口造一条带唯一标记的数据（一个用户、一个套餐、
+一把密钥），再用浏览器打开对应页面找这条标记。标记出现就说明页面读的是数据库；
+同时断言那些写死的模拟数据（如 `lin.zy@example.com`）不再出现。
+比断言 DOM 结构稳定得多。
+
+tests/routes.test.ts 是被一个真实故障逼出来的：`src/routes/panel/me.tsx` 里写了
+`export default function PanelMe() {}`，oxc-parser 把它误判成**类型导出**，
+而 SolidStart 的路由扫描会把 `isType` 的条目过滤掉 —— 这个页面于是直接 404，
+构建日志里一句警告都没有。这条测试用同一个解析器盯住所有路由文件的结构。
 
 tests/ui-flow.ts 用 Playwright（devDependency），浏览器已缓存在 `~/.cache/ms-playwright`。
 

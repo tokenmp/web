@@ -51,6 +51,21 @@ if (!databaseUrl) {
   warnings.push("DATABASE_URL 指向本机，确认这是有意的。");
 }
 
+/* ------------------------------------------------------ 充值回调密钥 */
+
+// 充值渠道回调接口用它验身份。本地不配也能跑（非生产环境放行），
+// 但生产必须配，否则回调接口会把所有请求都拒掉，充值接不进账。
+const callbackSecret = process.env.RECHARGE_CALLBACK_SECRET;
+if (!callbackSecret) {
+  if (isProduction) {
+    problems.push("RECHARGE_CALLBACK_SECRET 没有设置。生产环境下充值回调会被全部拒绝，先补上。");
+  } else {
+    warnings.push("RECHARGE_CALLBACK_SECRET 没设，充值回调只在非生产环境放行。");
+  }
+} else if (isProduction && callbackSecret === "change-me") {
+  problems.push("NODE_ENV=production 时 RECHARGE_CALLBACK_SECRET 不能用示例值。");
+}
+
 /* --------------------------------------------------------------- 连通性 */
 
 const url = databaseUrl ?? "mysql://tokenmp:tokenmp-dev@127.0.0.1:3307/tokenmp";

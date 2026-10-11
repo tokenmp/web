@@ -15,8 +15,15 @@ import { Dialog } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Segmented } from "~/components/ui/segmented";
-import { apiKeys as seedKeys, type ApiKey } from "~/lib/panel-data";
 import { keyStatusMeta } from "~/lib/panel-labels";
+import { createClientResource } from "~/lib/resource";
+import {
+  createApiKey,
+  deleteApiKey,
+  emptyKeys,
+  fetchApiKeys,
+  type PanelApiKey,
+} from "~/lib/user-panel";
 import { formatDate, formatDateTime, formatRelativeTime, isExpired } from "~/lib/utils";
 
 const STATUS_TABS = [
@@ -28,7 +35,7 @@ const STATUS_TABS = [
 type StatusFilter = (typeof STATUS_TABS)[number]["value"];
 
 /** 密钥只回前后缀，中间固定用省略号：既认得出来，也不泄露 */
-function maskedKey(key: ApiKey) {
+function maskedKey(key: PanelApiKey) {
   return key.key_suffix ? `${key.key_prefix}……${key.key_suffix}` : `${key.key_prefix}……`;
 }
 
@@ -41,9 +48,11 @@ function maskedKey(key: ApiKey) {
  *   - 过期的密钥单独标出来。过期了接口不报错、只是调用失败，不标的话很难查。
  *
  * 线上还有模型白名单、每分钟限速这些字段（接口里都有），本机先不做编辑入口。
+ *
+ * 数据来源是 GET /api/user/api_keys；新建与删除都真实落库，删完重新拉列表对齐。
  */
 export default function PanelKeys() {
-  const [keys, setKeys] = createSignal<ApiKey[]>(seedKeys);
+  const { data, loading, error, reload } = createClientResource(fetchApiKeys, emptyKeys);
   const [keyword, setKeyword] = createSignal("");
   const [status, setStatus] = createSignal<StatusFilter>("all");
 
@@ -52,8 +61,12 @@ export default function PanelKeys() {
   const [expiresAt, setExpiresAt] = createSignal("");
   const [created, setCreated] = createSignal<{ name: string; key: string } | null>(null);
   const [copied, setCopied] = createSignal(false);
+  const [busy, setBusy] = createSignal(false);
+  const [notice, setNotice] = createSignal("");
 
-  const [pendingDelete, setPendingDelete] = createSignal<ApiKey | null>(null);
+  const [pendingDelete, setPendingDelete] = createSignal<PanelApiKey | null>(null);
+
+  const keys = () => data().items;
 
   const filtered = createMemo(() => {
     const query = keyword().trim().toLowerCase();
@@ -73,34 +86,44 @@ export default function PanelKeys() {
     setCopied(false);
   };
 
-  const create = () => {
-    // 示例数据：真接后端时这里换成 POST /user/api_keys，明文由后端返回
-    const serial = keys().length + 1;
-    const suffix = `c${serial}0f${(serial * 37).toString(16).padStart(2, "0")}`.slice(0, 6);
-    const key: ApiKey = {
-      id: 40 + serial,
-      user_id: 263,
-      name: name().trim() || `密钥 ${serial}`,
-      key_prefix: `sk-tmp-${(0x9f3c1a + serial * 0x2f41).toString(16).slice(0, 4)}`,
-      key_suffix: suffix,
-      status: 1,
-      expires_at: expiresAt() ? new Date(expiresAt()).toISOString() : null,
-      last_used_at: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    setKeys(prev => [key, ...prev]);
-    setCreateOpen(false);
-    setCreated({ name: key.name ?? "", key: `${key.key_prefix}${"x".repeat(24)}${suffix}` });
-    resetForm();
+  const create = async () => {
+    const fallbackName = name().trim() || "未命名密钥";
+    setNotice("");
+    setBusy(true);
+    try {
+      // 明文由后端在这一次响应里返回，之后任何接口都拿不到
+      const issued = await createApiKey({
+        name: name().trim() || undefined,
+        expires_at: expiresAt() ? new Date(expiresAt()).toISOString() : undefined,
+      });
+      setCreateOpen(false);
+      setCreated({ name: issued.name ?? fallbackName, key: issued.key });
+      resetForm();
+      await reload();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "创建密钥失败");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const remove = () => {
+  const remove = async () => {
     const target = pendingDelete();
     if (!target) return;
-    setKeys(prev => prev.filter(key => key.id !== target.id));
-    setPendingDelete(null);
+    setNotice("");
+    setBusy(true);
+    try {
+      await deleteApiKey(target.id);
+      setPendingDelete(null);
+      await reload();
+    } catch (err) {
+      // 404 多是别人已经删过：提示之后照样重新拉一次，让界面回到服务端的状态
+      setNotice(err instanceof Error ? err.message : "删除密钥失败");
+      setPendingDelete(null);
+      await reload();
+    } finally {
+      setBusy(false);
+    }
   };
 
   const copyKey = async () => {
@@ -125,6 +148,17 @@ export default function PanelKeys() {
           新建密钥
         </Button>
       </PageHeader>
+
+      <Show when={error()}>
+        <p class="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
+          {error()}
+        </p>
+      </Show>
+      <Show when={notice()}>
+        <p class="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
+          {notice()}
+        </p>
+      </Show>
 
       <Card class="overflow-hidden">
         <div class="flex flex-wrap items-center gap-2 border-b p-4">
@@ -233,11 +267,19 @@ export default function PanelKeys() {
               删除
             </Button>
           )}
-          empty={keyword() || status() !== "all" ? "没有匹配的密钥" : "还没有密钥"}
+          empty={
+            loading()
+              ? "加载中…"
+              : keyword() || status() !== "all"
+                ? "没有匹配的密钥"
+                : "还没有密钥"
+          }
           emptyDescription={
-            keyword() || status() !== "all"
-              ? "试试调整搜索词或筛选条件"
-              : "创建 API 密钥即可开始调用模型"
+            loading()
+              ? undefined
+              : keyword() || status() !== "all"
+                ? "试试调整搜索词或筛选条件"
+                : "创建 API 密钥即可开始调用模型"
           }
         />
       </Card>
@@ -253,9 +295,9 @@ export default function PanelKeys() {
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
               取消
             </Button>
-            <Button onClick={create}>
+            <Button onClick={create} disabled={busy()}>
               <KeyRound class="size-4" aria-hidden="true" />
-              创建密钥
+              {busy() ? "创建中…" : "创建密钥"}
             </Button>
           </>
         }
@@ -323,8 +365,8 @@ export default function PanelKeys() {
             <Button variant="outline" onClick={() => setPendingDelete(null)}>
               取消
             </Button>
-            <Button variant="destructive" onClick={remove}>
-              删除
+            <Button variant="destructive" onClick={remove} disabled={busy()}>
+              {busy() ? "删除中…" : "删除"}
             </Button>
           </>
         }

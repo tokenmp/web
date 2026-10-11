@@ -1,6 +1,6 @@
 import { Title } from "@solidjs/meta";
 import Search from "lucide-solid/icons/search";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createEffect, createSignal, on, Show } from "solid-js";
 
 import { PageHeader } from "~/components/layout/page-header";
 import { CopyableId } from "~/components/panel/copyable-id";
@@ -15,19 +15,12 @@ import { PagerIfNeeded } from "~/components/ui/pager";
 import { Segmented } from "~/components/ui/segmented";
 import { Select } from "~/components/ui/select";
 import { Sheet, SheetClose } from "~/components/ui/sheet";
-import { requestRecords, type RequestRecord } from "~/lib/panel-data";
 import { requestStatusMeta } from "~/lib/panel-labels";
+import { createClientResource } from "~/lib/resource";
+import { getRequestRecordFilters, getRequestRecords, type RequestRecord } from "~/lib/usage";
 import { formatDateTime, formatLatency, formatNumber, formatRelativeTime } from "~/lib/utils";
 
 const PAGE_SIZE = 10;
-
-/** 筛选用的模型清单（按出现过的模型去重排序） */
-const MODEL_OPTIONS = [
-  { value: "all", label: "全部模型" },
-  ...[...new Set(requestRecords.map(record => record.model))]
-    .sort()
-    .map(model => ({ value: model, label: model })),
-];
 
 const STATUS_TABS = [
   { value: "all", label: "全部" },
@@ -55,23 +48,38 @@ export default function PanelRequestRecords() {
   const [page, setPage] = createSignal(1);
   const [pageSize, setPageSize] = createSignal(PAGE_SIZE);
 
-  const filtered = createMemo(() => {
-    const query = keyword().trim().toLowerCase();
-    return requestRecords.filter(record => {
-      const matchStatus = status() === "all" || record.status === status();
-      const matchModel = model() === "all" || record.model === model();
-      const matchQuery =
-        query === "" ||
-        record.model.toLowerCase().includes(query) ||
-        record.request_id.toLowerCase().includes(query) ||
-        (record.user_agent ?? "").toLowerCase().includes(query);
-      return matchStatus && matchModel && matchQuery;
-    });
-  });
+  const hasFilter = () => keyword().trim() !== "" || model() !== "all" || status() !== "all";
 
-  const paged = createMemo(() =>
-    filtered().slice((page() - 1) * pageSize(), page() * pageSize()),
+  // 列表在服务端筛选与分页，前端只负责把信号拼成查询参数
+  const list = createClientResource(
+    () =>
+      getRequestRecords({
+        page: page(),
+        size: pageSize(),
+        keyword: keyword().trim() || undefined,
+        model: model() === "all" ? undefined : model(),
+        status: status() === "all" ? undefined : status(),
+      }),
+    { items: [] as RequestRecord[], total: 0 },
   );
+
+  const filters = createClientResource(getRequestRecordFilters, { models: [], user_agents: [] });
+
+  // 筛选或页码一变就重新请求；首次挂载由 createClientResource 自己拉，defer 避免拉两次
+  createEffect(
+    on(
+      () => [keyword(), model(), status(), page(), pageSize()],
+      () => {
+        void list.reload();
+      },
+      { defer: true },
+    ),
+  );
+
+  const modelOptions = () => [
+    { value: "all", label: "全部模型" },
+    ...filters.data().models.map(value => ({ value, label: value })),
+  ];
 
   const reset = () => {
     setKeyword("");
@@ -114,7 +122,7 @@ export default function PanelRequestRecords() {
             label="模型"
             labelPlacement="inline"
             class="w-full sm:w-44"
-            options={MODEL_OPTIONS}
+            options={modelOptions()}
             value={model()}
             onChange={value => {
               setModel(value);
@@ -126,8 +134,14 @@ export default function PanelRequestRecords() {
           </Button>
         </div>
 
+        <Show when={list.error()}>
+          <p class="border-b bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
+            {list.error()}
+          </p>
+        </Show>
+
         <ResponsiveTable
-          items={paged()}
+          items={list.data().items}
           rowKey={record => record.request_id}
           minWidth="min-w-[980px]"
           columns={[
@@ -174,9 +188,9 @@ export default function PanelRequestRecords() {
               ),
             },
           ]}
-          cardTitle={record => record.model}
+          cardTitle={record => record.model ?? "未知模型"}
           cardSubtitle={record =>
-            `${record.channel} · ${record.total_tokens ? `${formatNumber(record.total_tokens)} tok · ` : ""}${formatRelativeTime(record.created_at)}`
+            `${record.channel ?? "未知渠道"} · ${record.total_tokens ? `${formatNumber(record.total_tokens)} tok · ` : ""}${formatRelativeTime(record.created_at)}`
           }
           cardRight={record => (
             <Badge variant={requestStatusMeta(record.status).variant}>
@@ -186,26 +200,22 @@ export default function PanelRequestRecords() {
           actions={record => (
             <Sheet
               trigger="请求详情"
-              title={record.model}
-              description={`${record.channel} · ${formatDateTime(record.created_at)}`}
+              title={record.model ?? "未知模型"}
+              description={`${record.channel ?? "未知渠道"} · ${formatDateTime(record.created_at)}`}
               footer={<SheetClose>关闭</SheetClose>}
             >
               <RecordDetail record={record} />
             </Sheet>
           )}
-          empty={keyword() || status() !== "all" || model() !== "all" ? "没有匹配的记录" : "暂无请求记录"}
-          emptyDescription={
-            keyword() || status() !== "all" || model() !== "all"
-              ? "试试调整搜索词或筛选条件"
-              : "还没有产生过 API 调用"
-          }
+          empty={hasFilter() ? "没有匹配的记录" : "暂无请求记录"}
+          emptyDescription={hasFilter() ? "试试调整搜索词或筛选条件" : "还没有产生过 API 调用"}
         />
 
         <div class="px-5">
           <PagerIfNeeded
             page={page()}
             size={pageSize()}
-            total={filtered().length}
+            total={list.data().total}
             onPageChange={setPage}
             onSizeChange={value => {
               setPageSize(value);
@@ -282,7 +292,7 @@ function RecordDetail(props: { record: RequestRecord }) {
           <DetailRow label="User Agent" value={record().user_agent ?? "—"} />
           <DetailRow
             label="尝试"
-            value={record().attempts > 1 ? `${record().attempts} 次（已重试）` : "1 次"}
+            value={record().attempts && record().attempts! > 1 ? `${record().attempts} 次（已重试）` : "1 次"}
           />
           <DetailRow label="记录时间" value={formatDateTime(record().created_at)} />
         </dl>

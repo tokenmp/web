@@ -56,7 +56,14 @@ export class InsufficientBalanceError extends Error {
   }
 }
 
-export type LedgerSource = "recharge" | "adjust" | "usage" | "channel_share" | "subscription";
+/** 记账来源。refund 是退给用户的钱，与入账的 recharge 分开，对账时能单独拉出来 */
+export type LedgerSource =
+  | "recharge"
+  | "adjust"
+  | "usage"
+  | "channel_share"
+  | "subscription"
+  | "refund";
 
 export type LedgerMove = {
   userId: number;

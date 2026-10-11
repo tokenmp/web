@@ -296,3 +296,135 @@ export const subscriptions = mysqlTable(
 );
 
 export type SubscriptionRow = typeof subscriptions.$inferSelect;
+
+/* ------------------------------------------- 业务：调用记录、计费、充值单 */
+
+/**
+ * 一次调用的记录（含失败）。字段照 openapi 的 RequestRecord。
+ * 数据的产生方是转发内核，本机只负责存与查；requestId 是摄入时的幂等键。
+ */
+export const requestRecords = mysqlTable(
+  "request_records",
+  {
+    id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+    requestId: varchar("request_id", { length: 64 }).notNull(),
+    userId: bigint("user_id", { mode: "number", unsigned: true }),
+    apiKeyId: bigint("api_key_id", { mode: "number", unsigned: true }),
+    model: varchar("model", { length: 128 }),
+    servedModel: varchar("served_model", { length: 128 }),
+    entry: varchar("entry", { length: 32 }),
+    stream: tinyint("stream").notNull().default(0),
+    channel: varchar("channel", { length: 128 }),
+    channelType: varchar("channel_type", { length: 32 }),
+    baseUrl: varchar("base_url", { length: 512 }),
+    status: varchar("status", { length: 16 }).notNull().default("in_progress"),
+    httpStatus: int("http_status"),
+    errorMessage: text("error_message"),
+    errorCode: varchar("error_code", { length: 64 }),
+    renderStatus: int("render_status"),
+    upstreamCode: varchar("upstream_code", { length: 64 }),
+    upstreamMessage: text("upstream_message"),
+    panelMessage: text("panel_message"),
+    attempts: int("attempts"),
+    retried: tinyint("retried"),
+    userAgent: varchar("user_agent", { length: 512 }),
+    reasoningEffort: varchar("reasoning_effort", { length: 32 }),
+    latencyMs: int("latency_ms"),
+    ttfbMs: int("ttfb_ms"),
+    tps: decimal("tps", { precision: 14, scale: 4 }),
+    promptTokens: bigint("prompt_tokens", { mode: "number" }),
+    completionTokens: bigint("completion_tokens", { mode: "number" }),
+    cacheReadTokens: bigint("cache_read_tokens", { mode: "number" }),
+    cacheWriteTokens: bigint("cache_write_tokens", { mode: "number" }),
+    totalTokens: bigint("total_tokens", { mode: "number" }),
+    startedAt: datetime("started_at", { mode: "date", fsp: 3 }),
+    finishedAt: datetime("finished_at", { mode: "date", fsp: 3 }),
+    createdAt: datetime("created_at", { mode: "date", fsp: 3 }).notNull(),
+  },
+  table => [
+    uniqueIndex("uk_request_records_request").on(table.requestId),
+    index("idx_request_records_user").on(table.userId, table.createdAt),
+    index("idx_request_records_model").on(table.model, table.createdAt),
+    index("idx_request_records_status").on(table.status, table.createdAt),
+  ],
+);
+
+export type RequestRecordRow = typeof requestRecords.$inferSelect;
+
+/**
+ * 计费流水。与调用记录一对一，但只对成功的调用产生。
+ * cost_* 是付给上游的成本，revenue_* 是向用户收的钱。
+ */
+export const billingRecords = mysqlTable(
+  "billing_records",
+  {
+    id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+    requestId: varchar("request_id", { length: 64 }).notNull(),
+    userId: bigint("user_id", { mode: "number", unsigned: true }),
+    apiKeyId: bigint("api_key_id", { mode: "number", unsigned: true }),
+    planId: bigint("plan_id", { mode: "number", unsigned: true }),
+    channelId: bigint("channel_id", { mode: "number", unsigned: true }),
+    channelName: varchar("channel_name", { length: 128 }),
+    ownerUserId: bigint("owner_user_id", { mode: "number", unsigned: true }),
+    entry: varchar("entry", { length: 32 }),
+    model: varchar("model", { length: 128 }),
+    stream: tinyint("stream").notNull().default(0),
+    usageSource: varchar("usage_source", { length: 32 }),
+    chargeMode: varchar("charge_mode", { length: 32 }),
+    costMultiplier: decimal("cost_multiplier", { precision: 14, scale: 8 }).notNull().default("1"),
+    costMultiplierRules: json("cost_multiplier_rules"),
+    costAmount: decimal("cost_amount", { precision: 18, scale: 8 }).notNull().default("0"),
+    revenueMultiplier: decimal("revenue_multiplier", { precision: 14, scale: 8 }).notNull().default("1"),
+    revenueMultiplierRules: json("revenue_multiplier_rules"),
+    revenueAmount: decimal("revenue_amount", { precision: 18, scale: 8 }).notNull().default("0"),
+    ownerCreditAmount: decimal("owner_credit_amount", { precision: 18, scale: 8 }).notNull().default("0"),
+    currency: varchar("currency", { length: 3 }).notNull().default("CNY"),
+    billingMode: varchar("billing_mode", { length: 32 }),
+    ledger: varchar("ledger", { length: 16 }),
+    latencyMs: int("latency_ms"),
+    httpStatus: int("http_status"),
+    attempts: int("attempts"),
+    retried: tinyint("retried"),
+    status: varchar("status", { length: 16 }).notNull().default("settled"),
+    promptTokens: bigint("prompt_tokens", { mode: "number" }).notNull().default(0),
+    completionTokens: bigint("completion_tokens", { mode: "number" }).notNull().default(0),
+    cacheReadTokens: bigint("cache_read_tokens", { mode: "number" }).notNull().default(0),
+    cacheWriteTokens: bigint("cache_write_tokens", { mode: "number" }).notNull().default(0),
+    totalTokens: bigint("total_tokens", { mode: "number" }).notNull().default(0),
+    createdAt: datetime("created_at", { mode: "date", fsp: 3 }).notNull(),
+  },
+  table => [
+    uniqueIndex("uk_billing_records_request").on(table.requestId),
+    index("idx_billing_records_user").on(table.userId, table.createdAt),
+    index("idx_billing_records_model").on(table.model, table.createdAt),
+    index("idx_billing_records_channel").on(table.channelId, table.createdAt),
+  ],
+);
+
+export type BillingRecordRow = typeof billingRecords.$inferSelect;
+
+/** 充值单。管理员代充不经过它，那条路直接记 creditTransactions */
+export const rechargeOrders = mysqlTable(
+  "recharge_orders",
+  {
+    id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+    orderNo: varchar("order_no", { length: 64 }).notNull(),
+    userId: bigint("user_id", { mode: "number", unsigned: true }).notNull(),
+    amount: decimal("amount", { precision: 14, scale: 8 }).notNull(),
+    currency: varchar("currency", { length: 3 }).notNull().default("CNY"),
+    channel: varchar("channel", { length: 24 }).notNull().default("mock"),
+    status: varchar("status", { length: 16 }).notNull().default("pending"),
+    externalNo: varchar("external_no", { length: 128 }),
+    paidAt: datetime("paid_at", { mode: "date", fsp: 3 }),
+    creditTransactionId: bigint("credit_transaction_id", { mode: "number", unsigned: true }),
+    createdAt: datetime("created_at", { mode: "date", fsp: 3 }).notNull(),
+    updatedAt: datetime("updated_at", { mode: "date", fsp: 3 }).notNull(),
+  },
+  table => [
+    uniqueIndex("uk_recharge_orders_no").on(table.orderNo),
+    index("idx_recharge_orders_user").on(table.userId, table.createdAt),
+    index("idx_recharge_orders_external").on(table.channel, table.externalNo),
+  ],
+);
+
+export type RechargeOrderRow = typeof rechargeOrders.$inferSelect;

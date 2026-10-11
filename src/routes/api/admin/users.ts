@@ -1,5 +1,5 @@
 import type { APIEvent } from "@solidjs/start/server";
-import { and, asc, count, desc, eq, inArray, like } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, like, or } from "drizzle-orm";
 
 import { guardAdmin } from "~/lib/api-auth";
 import { hashPassword } from "~/lib/auth";
@@ -136,7 +136,7 @@ function duplicateMessage(err: unknown) {
 /**
  * GET /api/admin/users
  *
- * 查询参数：page、size、keyword（按用户名模糊匹配）、sort、order。
+ * 查询参数：page、size、keyword（按用户名或邮箱模糊匹配）、sort、order。
  * order 只有 asc 生效，其余一律降序 —— openapi 就是这么定的。
  */
 export async function GET({ request }: APIEvent) {
@@ -148,7 +148,11 @@ export async function GET({ request }: APIEvent) {
   const { size, offset } = parsePaging(url);
 
   const keyword = (url.searchParams.get("keyword") ?? "").trim();
-  const where = keyword ? like(users.name, `%${escapeLike(keyword)}%`) : undefined;
+  // 用户名与邮箱都要命中：管理端常常只记得邮箱，只搜用户名等于搜不到
+  const pattern = `%${escapeLike(keyword)}%`;
+  const where = keyword
+    ? or(like(users.name, pattern), like(users.email, pattern))
+    : undefined;
 
   const sort = url.searchParams.get("sort");
   const column =

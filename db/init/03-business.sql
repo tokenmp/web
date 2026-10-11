@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
 -- 余额流水。balance_after 是快照，不是算出来的 —— 对账时要能复现「那一刻账户是多少」。
 -- source 的取值与线上一致：recharge 充值、adjust 手工调账、usage 用量扣费、
 -- channel_share 分享渠道的返额、subscription 订阅扣款。
+-- 本机另加一个 refund：退给用户的钱，与 recharge 分开，对账时能单独拉出来。
 -- balance_part 与 credit_part 记这次变动分别落在余额和信用上多少，
 -- 正负号跟 delta 同向：入账为正表示还了多少信用/进了多少余额，扣款为负表示扣了多少。
 CREATE TABLE IF NOT EXISTS credit_transactions (
@@ -157,6 +158,8 @@ CREATE TABLE IF NOT EXISTS plan_prices (
 
 -- 订阅记录，一次激活一行。续费就是再来一行，老的那行留着当历史。
 -- 当前订阅 = 这个用户 status='active' 且 period_end 最晚的那行。
+-- status 的取值：active 生效中、expired 已过期、cancelled 用户取消、superseded 被换档取代。
+-- 后两个都表示不再生效，但分得开：cancelled 是用户主动退的，superseded 是换套餐时旧的让位。
 -- quota_used 由网关按用量回填，本地订阅时从 0 起。
 CREATE TABLE IF NOT EXISTS subscriptions (
   id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
