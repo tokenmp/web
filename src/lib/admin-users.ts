@@ -2,7 +2,7 @@
  * 控制台「用户管理」页的客户端数据层。
  *
  * 后端端点（全部 x-implemented: local）：
- *   GET    /api/admin/users                   列表，支持 page/size/keyword/sort/order
+ *   GET    /api/admin/users                   列表，支持 page/size/keyword/status/sort/order
  *   POST   /api/admin/users                   新建
  *   GET    /api/admin/users/{id}              详情（含预算与订阅快照）
  *   PUT    /api/admin/users/{id}              改（任意子集，plan_id: null 表示解绑）
@@ -123,20 +123,40 @@ export type UserListParams = {
   size: number;
   /** 同时按用户名与邮箱模糊匹配 */
   keyword?: string;
+  /** 1 只看正常、0 只看已封禁；不给就是不筛状态。非法值后端按不筛处理 */
+  status?: 0 | 1;
   sort?: UserSort;
   order?: "asc" | "desc";
 };
 
+/** 列表。status 由服务端筛，total 也是筛选后的总数，页码条拿它算页数 */
 export function fetchUsers(params: UserListParams) {
   return getList<UserView>(
     `/api/admin/users${query({
       page: params.page,
       size: params.size,
       keyword: params.keyword,
+      status: params.status,
       sort: params.sort,
       order: params.order,
     })}`,
   );
+}
+
+/**
+ * 兼容名。admin-keys.ts 里原来另写了一份同样的请求，现在只有这一个实现；
+ * 密钥页与通知页的用户下拉走的就是它。与 fetchUsers 是同一件事，
+ * 只是默认取第一页 100 条 —— 下拉要一次铺够选项。
+ */
+export function fetchAdminUsers(params: UserListParams = { page: 1, size: 100 }) {
+  return fetchUsers({
+    page: params.page ?? 1,
+    size: params.size ?? 100,
+    keyword: params.keyword,
+    status: params.status,
+    sort: params.sort,
+    order: params.order,
+  });
 }
 
 export function fetchUser(id: number) {

@@ -24,8 +24,11 @@ import {
 } from "~/components/ui/table";
 import {
   applyAdjustment,
+  BATCH_LIMIT,
   batchRecharge,
+  BatchRechargeError,
   fetchAdjustLogs,
+  fetchAllBalanceAccounts,
   fetchBalanceAccounts,
   setUserBudget,
   updateCreditLimit,
@@ -367,6 +370,8 @@ export default function DashboardBalances() {
       <BatchRechargeDialog
         open={batchOpen()}
         targets={targets()}
+        total={accounts.data().total}
+        keyword={keyword().trim() || undefined}
         onOpenChange={setBatchOpen}
         onSaved={() => void accounts.reload()}
       />
@@ -625,15 +630,21 @@ function BalanceActionDialog(props: {
 }
 
 /**
- * 批量充值：对传入的账户逐笔走代充端点，失败不中断，最后汇总。
- * 失败的每一笔都列出姓名与原因，方便照着补。
+ * 批量充值：在一个事务里对整批账户各充值同一笔金额。
+ *
+ * 范围可选「当前页」或「全部筛选结果」。后者先按当前关键词翻页取完 id；超过单批
+ * 200 条上限时拆成多批依次提交，并在弹窗里说明批与批之间不是原子的。失败直接把后端
+ * 返回的原因显示出来（含是第几条）。
  */
 function BatchRechargeDialog(props: {
   open: boolean;
   targets: { id: number; name: string }[];
+  total: number;
+  keyword?: string;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 }) {
+  const [scope, setScope] = createSignal<"page" | "all">("page");
   const [amount, setAmount] = createSignal("");
   const [reason, setReason] = createSignal("批量充值");
   const [pending, setPending] = createSignal(false);
@@ -642,12 +653,17 @@ function BatchRechargeDialog(props: {
 
   createEffect(() => {
     if (!props.open) return;
+    setScope("page");
     setAmount("");
     setReason("批量充值");
     setPending(false);
     setError("");
     setSummary(null);
   });
+
+  // 计划处理的账户数：当前页立刻知道，全部筛选结果用列表接口给的 total
+  const plannedCount = () => (scope() === "all" ? props.total : props.targets.length);
+  const batchCount = () => Math.max(1, Math.ceil(plannedCount() / BATCH_LIMIT));
 
   const submit = async () => {
     if (pending()) return;
@@ -665,26 +681,37 @@ function BatchRechargeDialog(props: {
     setPending(true);
     setError("");
     try {
-      // 逐笔串行，一笔失败不影响后面的
-      const result = await batchRecharge(props.targets, value, trimmed);
+      let list = props.targets;
+      if (scope() === "all") {
+        list = await fetchAllBalanceAccounts({ keyword: props.keyword });
+        if (list.length === 0) {
+          setError("当前筛选下没有账户");
+          return;
+        }
+      }
+      const result = await batchRecharge(list, value, trimmed);
       setSummary(result);
       props.onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "提交失败");
+      // 分批提交时前面的批已经落库，要把这件事说清楚
+      if (err instanceof BatchRechargeError && err.applied > 0) {
+        setError(`${err.message}；前 ${err.applied} 批已入账，无法回滚`);
+      } else {
+        setError(err instanceof Error ? err.message : "提交失败");
+      }
     } finally {
       setPending(false);
     }
   };
 
   const result = () => summary();
-  const failed = () => summary()?.failed ?? [];
 
   return (
     <Dialog
       open={props.open}
       onOpenChange={props.onOpenChange}
       title="批量充值"
-      description={`对当前列表的 ${props.targets.length} 个账户，各充值同一笔金额`}
+      description="对选定的账户各充值同一笔金额，整批在同一个事务里提交"
       footer={
         <Show
           when={result()}
@@ -697,8 +724,10 @@ function BatchRechargeDialog(props: {
               >
                 取消
               </Button>
-              <Button disabled={pending() || props.targets.length === 0} onClick={() => void submit()}>
-                {pending() ? `提交中…（共 ${props.targets.length} 笔）` : "确认充值"}
+              <Button disabled={pending() || plannedCount() === 0} onClick={() => void submit()}>
+                {pending()
+                  ? `提交中…（共 ${plannedCount()} 笔）`
+                  : `确认充值（${plannedCount()} 笔）`}
               </Button>
             </>
           }
@@ -709,6 +738,24 @@ function BatchRechargeDialog(props: {
     >
       <Show when={!result()}>
         <div class="space-y-2">
+          <span class="text-sm font-medium">充值范围</span>
+          <Segmented
+            options={[
+              { value: "page", label: `当前页（${props.targets.length}）` },
+              { value: "all", label: `全部筛选结果（${props.total}）` },
+            ]}
+            value={scope()}
+            onChange={setScope}
+            ariaLabel="选择批量充值的账户范围"
+          />
+          <Show when={scope() === "all" && batchCount() > 1}>
+            <p class="rounded-md bg-warning/15 px-3 py-2 text-warning-text" role="status">
+              共 {props.total} 个账户，超过单批 {BATCH_LIMIT} 条上限，将分成 {batchCount()} 批
+              依次提交。每批各自是一个事务，中途失败时已提交的批次不会回滚。
+            </p>
+          </Show>
+        </div>
+        <div class="mt-3 space-y-2">
           <Label for="batch-amount">每笔金额（美元）</Label>
           <Input
             id="batch-amount"
@@ -720,7 +767,7 @@ function BatchRechargeDialog(props: {
             onInput={event => setAmount(event.currentTarget.value)}
           />
           <p class="text-muted-foreground">
-            逐笔调用调账端点（source=recharge），单笔失败不会中断其余，最后一起汇总。
+            走批量端点（source=recharge），一个事务里全成或全滚，金额以服务端返回的余额为准。
           </p>
         </div>
         <div class="mt-3 space-y-2">
@@ -733,45 +780,39 @@ function BatchRechargeDialog(props: {
           />
         </div>
         <div class="mt-3 rounded-md border p-3">
-          <p class="text-muted-foreground">将充值到：</p>
-          <ul class="mt-1 max-h-32 space-y-0.5 overflow-y-auto text-xs">
-            <For each={props.targets}>
-              {target => <li>{target.name}</li>}
-            </For>
-          </ul>
+          <p class="text-muted-foreground">
+            {scope() === "all" ? `全部筛选结果共 ${props.total} 个账户：` : "将充值到："}
+          </p>
+          <Show
+            when={scope() === "page"}
+            fallback={
+              <p class="mt-1 text-xs text-muted-foreground">
+                提交时按当前关键词翻页取全部账户。
+              </p>
+            }
+          >
+            <ul class="mt-1 max-h-32 space-y-0.5 overflow-y-auto text-xs">
+              <For each={props.targets}>{target => <li>{target.name}</li>}</For>
+            </ul>
+          </Show>
         </div>
       </Show>
 
       <Show when={result()}>
         {summaryResult => (
-          <div class="space-y-3">
-            <p class="rounded-md bg-success/15 px-3 py-2 text-success-text" role="status">
-              共 {summaryResult().total} 笔，成功 {summaryResult().succeeded} 笔，失败{" "}
-              {summaryResult().failed.length} 笔。
-              <Show when={summaryResult().lastBalanceAfter !== null}>
-                <span>
-                  {" "}
-                  最后一笔成功后余额 {formatCurrency(summaryResult().lastBalanceAfter ?? 0)}。
-                </span>
-              </Show>
-            </p>
-
-            <Show when={failed().length > 0}>
-              <div>
-                <p class="mb-1 font-medium">失败明细</p>
-                <ul class="max-h-40 space-y-1 overflow-y-auto rounded-md border p-3 text-xs">
-                  <For each={failed()}>
-                    {item => (
-                      <li class="flex items-start justify-between gap-3">
-                        <span class="font-medium">{item.name}</span>
-                        <span class="text-destructive-text">{item.message}</span>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </div>
+          <p class="rounded-md bg-success/15 px-3 py-2 text-success-text" role="status">
+            已为 {summaryResult().succeeded} 个账户各充值，共入账{" "}
+            {formatCurrency(summaryResult().totalAmount)}。
+            <Show when={summaryResult().batches > 1}>
+              <span>（分 {summaryResult().batches} 批提交）</span>
             </Show>
-          </div>
+            <Show when={summaryResult().lastBalanceAfter !== null}>
+              <span>
+                {" "}
+                最后一笔后余额 {formatCurrency(summaryResult().lastBalanceAfter ?? 0)}。
+              </span>
+            </Show>
+          </p>
         )}
       </Show>
 
