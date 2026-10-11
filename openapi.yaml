@@ -12,8 +12,10 @@ info:
 
     1. **线上后端**（Go + echo + MySQL），部署在 `https://tokenmp.top`。它是接口的权威定义，
        路径与字段都取自线上源码，不是推测。
-    2. **本机实现**（SolidStart），只落地了认证那一组，跑在 `http://localhost:6789`。
-       本地实现与线上有两处有意的不一致，见下面「两处差异」。
+    2. **本机实现**（SolidStart），已落地的有：认证、系统版本与公告通知，以及用户管理、
+       余额账本（含管理员代充）、API 密钥、套餐定价、订阅续费这几组业务接口，跑在
+       `http://localhost:6789`。转发产生的用量与调用日志不在本机后端，等网关回写。
+       本地实现与线上有意不一致的地方见下面「两处差异」与「本机扩展」。
 
     ## 约定的响应形状
 
@@ -48,7 +50,21 @@ info:
     本机实现是照线上抄的，但有两处故意不同，写在这里免得对不上：
 
     - **错误信封**：线上是 `{"error":{"code","message"}}`，本机是 `{"error":"一句话"}`（省掉了 code）。
-    - **列表分页**：线上分页参数是 `page` 与 `page_size`，响应是 `{ok, items, total}`。
+      前端按 HTTP 状态码分支，不要读 code。
+    - **列表分页**：两边都是 `page` 与 `size`（不是 `page_size`），响应都把 `items` 与 `total`
+      放在**顶层**。唯一的例外是 `/user/credits`，它的 `total` 在 `data` 里。
+
+    ## 本机扩展
+
+    线上没有、本机自己加的字段与参数，都标了「本机扩展」，逐个列在这里：
+
+    | 位置 | 扩展 | 说明 |
+    | --- | --- | --- |
+    | `POST /admin/balances/adjust` | 请求体 `source` | `adjust` 改授信、`recharge` 代充，默认 `adjust`。线上只有管理员调账一种语义 |
+    | `UserBudget` | `enabled` | 库里有这一列，页面要用来显示开关状态；与 `amount=0` 一起表示没设预算 |
+    | `PlanCore` | `features`、`recommended`、`sort_order` | 销售页卡片上的卖点清单、推荐标与排列顺序 |
+    | `GET /admin/plans` | `subscribers`、查询参数 `status` | `subscribers` 是现算的活跃订阅用户数；`status=all` 连已软删的套餐一起回 |
+    | `PlanActivationEvent.amount` | 符号 | 订阅是扣款（流水 `delta` 为负），这里回正数，读作「这次订阅花了多少」 |
 
     标注说明：本机已实现的端点带 `x-implemented: local`，只存在于线上的标 `x-implemented: remote`。
 
@@ -56,7 +72,7 @@ servers:
   - url: https://tokenmp.top
     description: 线上后端（Go + echo），接口定义以它为准
   - url: http://localhost:6789
-    description: 本机 SolidStart 后端，目前只有认证那一组
+    description: 本机 SolidStart 后端，认证、系统消息、用户与账本、密钥、套餐这几组已落地
 
 # 默认要鉴权。公开端点（/auth/login、/healthz 等）各自写了 security: [] 覆盖掉。
 security:
@@ -269,9 +285,10 @@ components:
 
     UserBudget:
       type: object
-      description: 用户的预算封顶。enabled=false 或 amount=0 表示还没设
+      description: 用户的预算封顶。enabled=0 或 amount=0 都表示还没设，两个条件都要判
       properties:
         user_id: { type: integer, format: int64 }
+        enabled: { type: integer, description: "本机扩展。1 启用、0 关闭" }
         amount: { type: number }
         period: { type: string, enum: [day, week, month] }
         period_start: { type: [string, "null"], format: date-time }
@@ -510,6 +527,13 @@ components:
         price: { type: number }
         currency: { type: string }
         status: { type: integer, description: 0 表示已删 }
+        features:
+          type: [array, "null"]
+          items: { type: string }
+          description: 本机扩展。销售页卡片上的卖点清单
+        recommended: { type: integer, description: "本机扩展。1 表示卡片上打推荐标" }
+        sort_order: { type: integer, description: "本机扩展。数字小的排前面" }
+        subscribers: { type: integer, description: "本机扩展。仅列表返回，当前活跃订阅的去重用户数，不落库" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -763,7 +787,7 @@ components:
       description: 一次套餐激活事件，来自账单流水
       properties:
         created_at: { type: string, format: date-time }
-        amount: { type: number }
+        amount: { type: number, description: "本机扩展。订阅流水 delta 为负，这里回正数，读作这次订阅花了多少" }
         ref_id: { type: string, description: "形如 plan-3" }
         plan_name: { type: string, description: 套餐已删则为空串 }
         balance_after: { type: number }
@@ -1381,7 +1405,7 @@ paths:
       operationId: getAdminUsers
       tags: [Users]
       summary: 用户列表
-      x-implemented: remote
+      x-implemented: local
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
@@ -1413,7 +1437,7 @@ paths:
       operationId: postAdminUsers
       tags: [Users]
       summary: 新建用户
-      x-implemented: remote
+      x-implemented: local
       requestBody:
         required: true
         content:
@@ -1454,7 +1478,7 @@ paths:
       operationId: getAdminUsersId
       tags: [Users]
       summary: 用户详情
-      x-implemented: remote
+      x-implemented: local
       responses:
         "200":
           description: 含余额、预算与订阅快照
@@ -1473,7 +1497,7 @@ paths:
       tags: [Users]
       summary: 改用户
       description: "字段都是可选的，不传就不改。传 `plan_id: null` 是解绑。改密码会把 token_version 加一。"
-      x-implemented: remote
+      x-implemented: local
       requestBody:
         required: true
         content:
@@ -1501,7 +1525,7 @@ paths:
       tags: [Users]
       summary: 停用用户
       description: 软删，只把 status 置 0，余额和流水都保留。用户不存在也返回成功
-      x-implemented: remote
+      x-implemented: local
       responses:
         "200":
           description: 已停用
@@ -1516,7 +1540,7 @@ paths:
       tags: [Users]
       summary: 设置预算封顶
       description: enabled=false 或 amount=0 表示清除预算
-      x-implemented: remote
+      x-implemented: local
       parameters:
         - $ref: "#/components/parameters/Id"
       requestBody:
@@ -1549,7 +1573,7 @@ paths:
       tags: [Users]
       summary: 某用户的密钥列表
       description: 用户不存在时返回空列表，不报 404
-      x-implemented: remote
+      x-implemented: local
       parameters:
         - $ref: "#/components/parameters/Id"
       responses:
@@ -1570,7 +1594,7 @@ paths:
       operationId: postAdminUsersIdApiKeys
       tags: [Users]
       summary: 给用户签发密钥
-      x-implemented: remote
+      x-implemented: local
       parameters:
         - $ref: "#/components/parameters/Id"
       requestBody:
@@ -1609,7 +1633,7 @@ paths:
       tags: [Users]
       summary: 删密钥
       description: 硬删。注意完整路径带 `/admin` 前缀，不是 `/api_keys/:id`
-      x-implemented: remote
+      x-implemented: local
       parameters:
         - $ref: "#/components/parameters/Id"
       responses:
@@ -1626,7 +1650,7 @@ paths:
       tags: [Balances]
       summary: 手工调账
       description: 正数入账、负数扣款。正数会先冲抵已用的信用额度
-      x-implemented: remote
+      x-implemented: local
       requestBody:
         required: true
         content:
@@ -1638,6 +1662,11 @@ paths:
                 user_id: { type: integer, format: int64 }
                 amount: { type: number }
                 reason: { type: string, maxLength: 256 }
+                source:
+                  type: string
+                  enum: [adjust, recharge]
+                  default: adjust
+                  description: 本机扩展。区分代充与手工调账，线上没有这个字段
       responses:
         "200":
           description: 调账结果
@@ -1661,7 +1690,7 @@ paths:
       operationId: getAdminAdjustLogs
       tags: [Balances]
       summary: 调账记录
-      x-implemented: remote
+      x-implemented: local
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
@@ -1704,7 +1733,12 @@ paths:
       operationId: getAdminPlans
       tags: [Plans]
       summary: 套餐列表
-      x-implemented: remote
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [active, all], default: active }
+          description: 本机扩展。默认只回 status=1 的套餐，all 连已软删的一起回
+      x-implemented: local
       responses:
         "200":
           description: 全部套餐
@@ -1723,7 +1757,7 @@ paths:
       tags: [Plans]
       summary: 新建套餐
       description: mode=subscription 时 quota_amount 与 quota_period_days 必填
-      x-implemented: remote
+      x-implemented: local
       requestBody:
         required: true
         content:
@@ -1770,7 +1804,7 @@ paths:
       operationId: getAdminPlansId
       tags: [Plans]
       summary: 套餐详情
-      x-implemented: remote
+      x-implemented: local
       responses:
         "200":
           description: 套餐与它名下全部模型价
@@ -1795,7 +1829,7 @@ paths:
       tags: [Plans]
       summary: 整体替换套餐
       description: 请求体与新建相同，属于整体替换：字段缺失会被写成默认值
-      x-implemented: remote
+      x-implemented: local
       requestBody:
         required: true
         content:
@@ -1814,7 +1848,7 @@ paths:
       tags: [Plans]
       summary: 删套餐
       description: 软删（status=0），同时物理删掉它名下全部 plan_prices
-      x-implemented: remote
+      x-implemented: local
       responses:
         "200":
           description: 已删
@@ -1828,7 +1862,7 @@ paths:
       operationId: postAdminPlansIdPrices
       tags: [Plans]
       summary: 给套餐加一条模型价
-      x-implemented: remote
+      x-implemented: local
       parameters:
         - $ref: "#/components/parameters/Id"
       requestBody:
@@ -1872,7 +1906,7 @@ paths:
       operationId: deleteAdminPlanPricesId
       tags: [Plans]
       summary: 删一条模型价
-      x-implemented: remote
+      x-implemented: local
       parameters:
         - $ref: "#/components/parameters/Id"
       responses:
@@ -1888,7 +1922,7 @@ paths:
       operationId: getAdminPlanActivationsSummary
       tags: [Plans]
       summary: 套餐激活概览
-      x-implemented: remote
+      x-implemented: local
       responses:
         "200":
           description: 订阅数、本月收入、本周激活数、七天内到期数
@@ -1912,7 +1946,7 @@ paths:
       operationId: getAdminPlanActivations
       tags: [Plans]
       summary: 套餐激活列表
-      x-implemented: remote
+      x-implemented: local
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
@@ -1945,7 +1979,7 @@ paths:
       operationId: getAdminPlanActivationsUserIdHistory
       tags: [Plans]
       summary: 某用户的激活流水
-      x-implemented: remote
+      x-implemented: local
       parameters:
         - name: user_id
           in: path
@@ -3402,7 +3436,7 @@ paths:
       tags: [UserPanel]
       summary: 我的密钥
       description: 只回前后缀，不回完整密钥
-      x-implemented: remote
+      x-implemented: local
       security:
         - bearerSession: []
         - apiKey: []
@@ -3424,7 +3458,7 @@ paths:
       operationId: postUserApiKeys
       tags: [UserPanel]
       summary: 给自己签一把密钥
-      x-implemented: remote
+      x-implemented: local
       security:
         - bearerSession: []
         - apiKey: []
@@ -3462,7 +3496,7 @@ paths:
       operationId: deleteUserApiKeysId
       tags: [UserPanel]
       summary: 删自己的密钥
-      x-implemented: remote
+      x-implemented: local
       security:
         - bearerSession: []
         - apiKey: []
@@ -3599,7 +3633,7 @@ paths:
       tags: [UserPanel]
       summary: 额度与流水
       description: "例外：total 在 data 里，不在顶层"
-      x-implemented: remote
+      x-implemented: local
       security:
         - bearerSession: []
         - apiKey: []
@@ -4115,7 +4149,7 @@ paths:
       operationId: getUserPlans
       tags: [UserPanel]
       summary: 可订阅的套餐
-      x-implemented: remote
+      x-implemented: local
       security:
         - bearerSession: []
         - apiKey: []
@@ -4151,7 +4185,7 @@ paths:
       tags: [UserPanel]
       summary: 订阅套餐
       description: 没有请求体
-      x-implemented: remote
+      x-implemented: local
       security:
         - bearerSession: []
         - apiKey: []
@@ -4176,7 +4210,7 @@ paths:
       operationId: getUserMe
       tags: [UserPanel]
       summary: 我的账号信息
-      x-implemented: remote
+      x-implemented: local
       security:
         - bearerSession: []
         - apiKey: []

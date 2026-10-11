@@ -3,12 +3,14 @@ import {
   boolean,
   datetime,
   decimal,
+  index,
   int,
   json,
   mysqlTable,
   primaryKey,
   text,
   tinyint,
+  uniqueIndex,
   varchar,
 } from "drizzle-orm/mysql-core";
 
@@ -35,6 +37,10 @@ export const users = mysqlTable("users", {
   /** 1 = 正常，0 = 停用，沿用线上 sales 的约定 */
   status: tinyint("status").notNull().default(1),
   creditLimit: decimal("credit_limit", { precision: 14, scale: 8 }).notNull().default("0"),
+  /** 可用余额（元）。调账、订阅、用量扣费都改这一列 */
+  balance: decimal("balance", { precision: 14, scale: 8 }).notNull().default("0"),
+  /** 已用掉的信用额度。剩余信用 = creditLimit - creditUsed */
+  creditUsed: decimal("credit_used", { precision: 14, scale: 8 }).notNull().default("0"),
   planId: bigint("plan_id", { mode: "number", unsigned: true }),
   /** 改密码时自增，让已经签发的会话失效 */
   tokenVersion: bigint("token_version", { mode: "number" }).notNull().default(0),
@@ -108,3 +114,185 @@ export const announcementDismissals = mysqlTable(
   },
   table => [primaryKey({ columns: [table.userId, table.announcementId] })],
 );
+
+/* -------------------------------------------------------- 业务：余额与密钥 */
+
+/**
+ * 预算封顶。存与展示在本地，判定在网关侧。
+ * enabled=false 或 amount=0 都表示没设，两个条件都要判。
+ */
+export const userBudgets = mysqlTable("user_budgets", {
+  userId: bigint("user_id", { mode: "number", unsigned: true }).primaryKey(),
+  enabled: tinyint("enabled").notNull().default(0),
+  amount: decimal("amount", { precision: 14, scale: 8 }).notNull().default("0"),
+  period: varchar("period", { length: 8 }).notNull().default("month"),
+  periodStart: datetime("period_start", { mode: "date", fsp: 3 }),
+  periodEnd: datetime("period_end", { mode: "date", fsp: 3 }),
+  used: decimal("used", { precision: 14, scale: 8 }).notNull().default("0"),
+  /** 改动时自增，网关拿它判断缓存的预算是否过期 */
+  version: bigint("version", { mode: "number" }).notNull().default(0),
+  createdAt: datetime("created_at", { mode: "date", fsp: 3 }).notNull(),
+  updatedAt: datetime("updated_at", { mode: "date", fsp: 3 }).notNull(),
+});
+
+export type UserBudgetRow = typeof userBudgets.$inferSelect;
+
+/**
+ * API 密钥。只存 sha256，明文只在签发那一次返回。
+ * keyPrefix 是明文前 9 位，keySuffix 是末 6 位，列表里靠这两段辨识。
+ */
+export const apiKeys = mysqlTable(
+  "api_keys",
+  {
+    id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+    userId: bigint("user_id", { mode: "number", unsigned: true }).notNull(),
+    name: varchar("name", { length: 64 }),
+    keyHash: varchar("key_hash", { length: 64 }).notNull(),
+    keyPrefix: varchar("key_prefix", { length: 16 }).notNull(),
+    keySuffix: varchar("key_suffix", { length: 8 }),
+    /** 1 = 正常，0 = 已停用 */
+    status: tinyint("status").notNull().default(1),
+    modelWhitelist: json("model_whitelist"),
+    rateLimitPerMin: int("rate_limit_per_min"),
+    expiresAt: datetime("expires_at", { mode: "date", fsp: 3 }),
+    /** 网关回写，本地签发时为空 */
+    lastUsedAt: datetime("last_used_at", { mode: "date", fsp: 3 }),
+    createdAt: datetime("created_at", { mode: "date", fsp: 3 }).notNull(),
+    updatedAt: datetime("updated_at", { mode: "date", fsp: 3 }).notNull(),
+  },
+  table => [uniqueIndex("uk_api_keys_hash").on(table.keyHash), index("idx_api_keys_user").on(table.userId, table.createdAt)],
+);
+
+export type ApiKeyRow = typeof apiKeys.$inferSelect;
+
+/**
+ * 余额流水。balanceAfter 存快照而不是算出来，对账时要能复现那一刻的账户状态。
+ * source: recharge 充值、adjust 调账、usage 用量扣费、channel_share 分享返额、subscription 订阅扣款。
+ */
+export const creditTransactions = mysqlTable(
+  "credit_transactions",
+  {
+    id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+    userId: bigint("user_id", { mode: "number", unsigned: true }).notNull(),
+    delta: decimal("delta", { precision: 14, scale: 8 }).notNull(),
+    balanceAfter: decimal("balance_after", { precision: 14, scale: 8 }).notNull(),
+    creditUsedAfter: decimal("credit_used_after", { precision: 14, scale: 8 }).notNull().default("0"),
+    source: varchar("source", { length: 16 }).notNull(),
+    refId: varchar("ref_id", { length: 64 }),
+    reason: varchar("reason", { length: 256 }),
+    operator: varchar("operator", { length: 64 }),
+    model: varchar("model", { length: 128 }),
+    totalTokens: bigint("total_tokens", { mode: "number" }),
+    /** 这次变动落在余额上的部分，符号与 delta 同向 */
+    balancePart: decimal("balance_part", { precision: 14, scale: 8 }).notNull().default("0"),
+    /** 落在信用额度上的部分 */
+    creditPart: decimal("credit_part", { precision: 14, scale: 8 }).notNull().default("0"),
+    /** 扣的是订阅额度还是余额，用量类流水才有 */
+    ledger: varchar("ledger", { length: 16 }),
+    detail: json("detail"),
+    createdAt: datetime("created_at", { mode: "date", fsp: 3 }).notNull(),
+  },
+  table => [
+    index("idx_ct_user").on(table.userId, table.createdAt),
+    index("idx_ct_source").on(table.source, table.createdAt),
+    index("idx_ct_ref").on(table.refId),
+  ],
+);
+
+export type CreditTransactionRow = typeof creditTransactions.$inferSelect;
+
+/* ------------------------------------------------------------ 业务：套餐 */
+
+/**
+ * 套餐。字段照 openapi 的 PlanCore，另加 features（销售页卖点）、
+ * recommended（推荐标）与 sortOrder（排列顺序）三个本机扩展。
+ * 订阅数不存列，从 subscriptions 现算。删是软删 status=0。
+ */
+export const plans = mysqlTable(
+  "plans",
+  {
+    id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+    name: varchar("name", { length: 64 }).notNull(),
+    /** pay_as_you_go 按量付费 | subscription 订阅制 */
+    mode: varchar("mode", { length: 24 }).notNull(),
+    /** markup 按成本乘倍率 | table 按 plan_prices 逐模型定价 */
+    pricingMode: varchar("pricing_mode", { length: 16 }).notNull(),
+    markupMultiplier: decimal("markup_multiplier", { precision: 14, scale: 8 }).notNull().default("1"),
+    rateRules: json("rate_rules"),
+    quotaKind: varchar("quota_kind", { length: 16 }).notNull().default("money"),
+    quotaAmount: decimal("quota_amount", { precision: 18, scale: 8 }).notNull().default("0"),
+    quotaPeriodDays: int("quota_period_days").notNull().default(30),
+    /** disabled 超额停用 | bill 超额继续计费 */
+    overageMode: varchar("overage_mode", { length: 16 }).notNull().default("disabled"),
+    price: decimal("price", { precision: 14, scale: 8 }).notNull().default("0"),
+    currency: varchar("currency", { length: 3 }).notNull().default("CNY"),
+    /** 0 表示已删 */
+    status: tinyint("status").notNull().default(1),
+    features: json("features"),
+    recommended: tinyint("recommended").notNull().default(0),
+    sortOrder: int("sort_order").notNull().default(0),
+    createdAt: datetime("created_at", { mode: "date", fsp: 3 }).notNull(),
+    updatedAt: datetime("updated_at", { mode: "date", fsp: 3 }).notNull(),
+  },
+  table => [uniqueIndex("uk_plans_name").on(table.name)],
+);
+
+export type PlanRow = typeof plans.$inferSelect;
+
+/** 套餐里针对单个模型的定价，pricingMode=table 的套餐才用得上 */
+export const planPrices = mysqlTable(
+  "plan_prices",
+  {
+    id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+    planId: bigint("plan_id", { mode: "number", unsigned: true }).notNull(),
+    model: varchar("model", { length: 128 }).notNull(),
+    /** token 按量 | request 按次 */
+    costMode: varchar("cost_mode", { length: 16 }).notNull().default("token"),
+    inputPerMillion: decimal("input_per_million", { precision: 18, scale: 8 }).notNull().default("0"),
+    outputPerMillion: decimal("output_per_million", { precision: 18, scale: 8 }).notNull().default("0"),
+    cacheReadPerMillion: decimal("cache_read_per_million", { precision: 18, scale: 8 })
+      .notNull()
+      .default("0"),
+    cacheWritePerMillion: decimal("cache_write_per_million", { precision: 18, scale: 8 })
+      .notNull()
+      .default("0"),
+    perRequest: decimal("per_request", { precision: 18, scale: 8 }).notNull().default("0"),
+    requestWeight: decimal("request_weight", { precision: 14, scale: 8 }).notNull().default("1"),
+    createdAt: datetime("created_at", { mode: "date", fsp: 3 }).notNull(),
+    updatedAt: datetime("updated_at", { mode: "date", fsp: 3 }).notNull(),
+  },
+  table => [uniqueIndex("uk_plan_prices_model").on(table.planId, table.model)],
+);
+
+export type PlanPriceRow = typeof planPrices.$inferSelect;
+
+/**
+ * 订阅记录，一次激活一行，续费再加一行。
+ * 当前订阅 = 该用户 status='active' 且 period_end 最晚的那行。
+ * quotaUsed 由网关按用量回填，本地订阅时从 0 起。
+ */
+export const subscriptions = mysqlTable(
+  "subscriptions",
+  {
+    id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+    userId: bigint("user_id", { mode: "number", unsigned: true }).notNull(),
+    planId: bigint("plan_id", { mode: "number", unsigned: true }).notNull(),
+    amount: decimal("amount", { precision: 14, scale: 8 }).notNull().default("0"),
+    quotaKind: varchar("quota_kind", { length: 16 }).notNull().default("money"),
+    quotaLimit: decimal("quota_limit", { precision: 18, scale: 8 }).notNull().default("0"),
+    quotaUsed: decimal("quota_used", { precision: 18, scale: 8 }).notNull().default("0"),
+    periodStart: datetime("period_start", { mode: "date", fsp: 3 }),
+    periodEnd: datetime("period_end", { mode: "date", fsp: 3 }),
+    status: varchar("status", { length: 16 }).notNull().default("active"),
+    createdAt: datetime("created_at", { mode: "date", fsp: 3 }).notNull(),
+    updatedAt: datetime("updated_at", { mode: "date", fsp: 3 }).notNull(),
+  },
+  table => [
+    index("idx_subscriptions_user").on(table.userId, table.periodEnd),
+    index("idx_subscriptions_plan").on(table.planId),
+    index("idx_subscriptions_status").on(table.status, table.periodEnd),
+    index("idx_subscriptions_created").on(table.createdAt),
+  ],
+);
+
+export type SubscriptionRow = typeof subscriptions.$inferSelect;
