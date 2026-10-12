@@ -9,9 +9,9 @@ import { Card } from "~/components/ui/card";
 import { DecimalSplit } from "~/components/ui/decimal-split";
 import { Dialog } from "~/components/ui/dialog";
 import { Select } from "~/components/ui/select";
-import { usageSeries } from "~/lib/panel-data";
 import { planModeMeta, pricingModeMeta } from "~/lib/panel-labels";
 import { createClientResource } from "~/lib/resource";
+import { getUsage, type UsageSeriesItem } from "~/lib/usage";
 import {
   emptyPlans,
   fetchMe,
@@ -52,14 +52,12 @@ function hasPrice(plan: PanelPlan) {
  * 三块：现在订的是什么（含周期额度用了多少）、最近用得怎么样、还能换什么。
  * 列表与当前订阅读 GET /api/user/plans；确认订阅会真的 POST 下单，换档时后端按旧订阅
  * 剩余额度折算抵扣，只补差价，余额不够回 402，这里单独提示「先充值」。
- *
- * 用量统计那三格仍读 panel-data 的用量样例：它对应的 GET /user/usage 在本机还是 remote，
- * 等用量数据源落地后再换成那个接口。
  */
 export default function PanelPlans() {
   const { data, loading, error, reload } = createClientResource(fetchPlans, emptyPlans);
   // users.plan_id 单独拉：后台只绑定、没开周期时，当前套餐要靠它才显示得出来
   const me = createClientResource<PanelMe | null>(fetchMe, null);
+  const usageTrend = createClientResource<UsageSeriesItem[]>(() => getUsage(7), []);
   const [pending, setPending] = createSignal<PanelPlan | null>(null);
   const [subscribed, setSubscribed] = createSignal<string | null>(null);
   const [notice, setNotice] = createSignal("");
@@ -77,16 +75,15 @@ export default function PanelPlans() {
   };
 
   const usage = createMemo(() => {
-    const today = usageSeries[usageSeries.length - 1];
-    const week = usageSeries.reduce(
+    const series = usageTrend.data();
+    const today = series.at(-1) ?? null;
+    const week = series.reduce(
       (acc, day) => ({ requests: acc.requests + day.requests, revenue: acc.revenue + day.revenue }),
       { requests: 0, revenue: 0 },
     );
     return [
-      { label: "今日", requests: today.requests, revenue: today.revenue },
-      { label: "本周", requests: week.requests, revenue: week.revenue },
-      // 本月按 4.2 周估：示例数据只有 7 天，写死一个量级就够了
-      { label: "本月", requests: Math.round(week.requests * 4.2), revenue: week.revenue * 4.2 },
+      { label: "今日", requests: today?.requests ?? null, revenue: today?.revenue ?? null },
+      { label: "近 7 日", requests: week.requests, revenue: week.revenue },
     ];
   });
 
@@ -117,11 +114,11 @@ export default function PanelPlans() {
     <>
       <Title>套餐 | TokenMP 用户面板</Title>
 
-      <PageHeader description="当前订阅、额度用量与在售套餐目录" />
+      <PageHeader />
 
       <Show when={subscribed()}>
         <p class="mb-4 rounded-lg border border-success/30 bg-success/15 px-4 py-2.5 text-sm text-success-text">
-          已订阅「{subscribed()}」，周期额度从新周期起算。
+          已订阅「{subscribed()}」
         </p>
       </Show>
 
@@ -144,13 +141,6 @@ export default function PanelPlans() {
               <h2 class="text-base font-semibold tracking-tight">
                 {error() ? "套餐读取失败" : loading() || plans().length === 0 ? "加载中…" : "还没有订阅套餐"}
               </h2>
-              <p class="mt-1.5 text-xs text-muted-foreground">
-                {error()
-                  ? "刷新页面重试，或稍后再看。"
-                  : loading() || plans().length === 0
-                    ? "正在读取当前订阅"
-                    : "从下面的目录里挑一档订阅，或选「按量付费」只按实际用量从余额扣费。"}
-              </p>
             </div>
           </Card>
         }
@@ -174,10 +164,7 @@ export default function PanelPlans() {
                 </Badge>
               </div>
               <p class="mt-1.5 text-xs text-muted-foreground">
-                <Show
-                  when={current()!.subscription}
-                  fallback="后台已完成绑定，还没有开通周期。下面挑一档订阅，就有周期额度。"
-                >
+                <Show when={current()!.subscription}>
                   周期 {formatDate(current()!.subscription!.period_start)} –{" "}
                   {formatDate(current()!.subscription!.period_end)}
                   {left() !== null && <span> · 剩余 {left()} 天</span>}
@@ -216,7 +203,7 @@ export default function PanelPlans() {
                     current()!.subscription!.quota_limit - current()!.subscription!.quota_used,
                   )}
                 />{" "}
-                积分 · 到期后额度自动重置，未用部分不结转
+                积分
               </p>
             </div>
           </Show>
@@ -226,18 +213,24 @@ export default function PanelPlans() {
       <Card class="mt-5">
         <div class="border-b p-4">
           <h2 class="text-sm font-semibold">用量统计</h2>
-          <p class="mt-1 text-xs text-muted-foreground">按成功计费的请求统计</p>
         </div>
-        <div class="grid grid-cols-3 divide-x divide-border">
+        <div class="grid grid-cols-2 divide-x divide-border">
           <For each={usage()}>
             {item => (
               <div class="p-4">
                 <p class="text-xs text-muted-foreground">{item.label}</p>
                 <p class="mt-1 text-lg font-semibold tabular-nums">
-                  {formatNumber(item.requests)} <span class="text-xs font-normal">次</span>
+                  {item.requests === null ? "—" : formatNumber(item.requests)}{" "}
+                  <span class="text-xs font-normal">次</span>
                 </p>
                 <p class="mt-1 text-xs text-muted-foreground">
-                  <DecimalSplit text={formatPoints(item.revenue)} /> 积分
+                  {item.revenue === null ? (
+                    "—"
+                  ) : (
+                    <>
+                      <DecimalSplit text={formatPoints(item.revenue)} /> 积分
+                    </>
+                  )}
                 </p>
               </div>
             )}
@@ -245,7 +238,7 @@ export default function PanelPlans() {
         </div>
       </Card>
 
-      <Section title="在售套餐目录" caption="切换后即时生效，新套餐额度从新周期起算" class="mt-5">
+      <Section title="在售套餐目录" class="mt-5">
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <For each={plans()}>
             {plan => {

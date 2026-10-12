@@ -148,7 +148,7 @@ export default function DashboardAnnouncements() {
     <>
       <Title>公告 | TokenMP 销售控制台</Title>
 
-      <PageHeader description="公告面向全站；存成草稿后要点「发布」才会出现在用户端">
+      <PageHeader>
         <Button onClick={() => openForm(null)}>
           <Plus class="size-4" aria-hidden="true" />
           新建公告

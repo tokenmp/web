@@ -241,7 +241,7 @@ export default function DashboardUsers() {
     <>
       <Title>用户 | TokenMP 销售控制台</Title>
 
-      <PageHeader description="管理账户、套餐、授信额度与预算，签发与吊销调用密钥">
+      <PageHeader>
         <Button onClick={() => setCreateOpen(true)}>
           <UserPlus class="size-4" aria-hidden="true" />
           新增用户
@@ -636,7 +636,7 @@ function UserDetail(props: { user: UserView; plans: PlanOption[]; onChanged: () 
         </div>
       </Section>
 
-      <Section title="预算封顶" caption="关掉开关或把金额填 0 都表示清除预算">
+      <Section title="预算封顶">
         <Show
           when={budgetEnabled(user().budget)}
           fallback={<p class="text-muted-foreground">未设预算，调用不受封顶限制</p>}
@@ -683,7 +683,7 @@ function UserDetail(props: { user: UserView; plans: PlanOption[]; onChanged: () 
         )}
       </Show>
 
-      <Section title="API 密钥" caption="明文只在签发那一次出现，列表里只有前后缀">
+      <Section title="API 密钥">
         <Show when={keys.error()}>
           <p class="text-sm text-destructive-text">{keys.error()}</p>
         </Show>

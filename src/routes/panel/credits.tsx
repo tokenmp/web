@@ -1,14 +1,13 @@
 import { Title } from "@solidjs/meta";
 import { createSignal, For, Show } from "solid-js";
 
-import { PageHeader } from "~/components/layout/page-header";
 import { Delta } from "~/components/panel/delta";
 import { ResponsiveTable } from "~/components/panel/responsive-table";
 import { Badge } from "~/components/ui/badge";
 import { Card } from "~/components/ui/card";
 import { DecimalSplit } from "~/components/ui/decimal-split";
 import { PagerIfNeeded } from "~/components/ui/pager";
-import { txSourceMeta } from "~/lib/panel-labels";
+import { detailText, txSourceMeta } from "~/lib/panel-labels";
 import { createClientResource } from "~/lib/resource";
 import {
   emptyCredits,
@@ -38,18 +37,6 @@ function ledgerParts(tx: PanelTransaction) {
   }
   if (hasBalance && hasCredit) return "返还信用 + 转入余额";
   return hasCredit ? "返还信用额度" : "转入余额";
-}
-
-/** detail 在后端是 JSON：本机通常是 null，网关回写时可能是字符串或对象，这里只当摘要用 */
-function detailText(detail: unknown) {
-  if (typeof detail === "string") return detail;
-  if (detail && typeof detail === "object") {
-    const value = detail as Record<string, unknown>;
-    for (const key of ["reason", "message", "text", "detail"]) {
-      if (typeof value[key] === "string" && value[key]) return value[key] as string;
-    }
-  }
-  return null;
 }
 
 /**
@@ -89,8 +76,6 @@ export default function PanelCredits() {
   return (
     <>
       <Title>余额明细 | TokenMP 用户面板</Title>
-
-      <PageHeader description="1 元 = 10000 积分，积分可用于消费调用模型" />
 
       <Show when={error()}>
         <p class="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">

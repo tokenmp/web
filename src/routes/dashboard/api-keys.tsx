@@ -163,7 +163,7 @@ export default function DashboardApiKeys() {
     <>
       <Title>API 密钥 | TokenMP 销售控制台</Title>
 
-      <PageHeader description="管理端按用户查密钥：先选用户，再签发、停用或删除">
+      <PageHeader>
         <Button disabled={selected() === null} onClick={() => setIssueOpen(true)}>
           <Plus class="size-4" aria-hidden="true" />
           签发密钥
@@ -401,7 +401,7 @@ export default function DashboardApiKeys() {
           if (!open) setPendingDelete(null);
         }}
         title="删除这把密钥？"
-        description="这是硬删，删了之后网关立刻拒掉它，历史记录里也查不到这一把了。只是想先停用的话，用列表里的「停用」。"
+        description="这是硬删，删了之后网关立刻拒掉它，历史记录里也查不到这一把了。"
         footer={
           <>
             <Button variant="outline" onClick={() => setPendingDelete(null)}>
@@ -641,7 +641,7 @@ function KeyEditDialog(props: {
       open={props.item !== null}
       onOpenChange={props.onOpenChange}
       title="编辑密钥属性"
-      description="只改填了的内容；白名单与限速清空表示恢复为不限。停用与启用请用列表里的按钮。"
+      description="只改填了的内容；白名单与限速清空表示恢复为不限。"
       class="max-h-[calc(100dvh-2rem)] overflow-y-auto"
       footer={
         <>

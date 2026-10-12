@@ -171,7 +171,7 @@ export default function DashboardBalances() {
     <>
       <Title>余额 | TokenMP 销售控制台</Title>
 
-      <PageHeader description="代充与手工调账都写进同一本账；金额以服务端返回的变动后余额为准">
+      <PageHeader>
         <Show when={tab() === "accounts"}>
           <Button onClick={() => setBatchOpen(true)} disabled={accounts.data().items.length === 0}>
             <Plus class="size-4" aria-hidden="true" />
@@ -614,7 +614,7 @@ function BalanceActionDialog(props: {
               portal={false}
             />
             <p class="text-muted-foreground">
-              关掉开关或金额填 0 都会清除预算，接口回的是设置后的状态。
+              关掉开关或金额填 0 都会清除预算。
             </p>
           </div>
         </Show>
@@ -767,7 +767,7 @@ function BatchRechargeDialog(props: {
             onInput={event => setAmount(event.currentTarget.value)}
           />
           <p class="text-muted-foreground">
-            走批量端点（source=recharge），一个事务里全成或全滚，金额以服务端返回的余额为准。
+            整批在同一个事务里提交，全成或全滚。
           </p>
         </div>
         <div class="mt-3 space-y-2">
@@ -876,8 +876,7 @@ function AdjustLogsPanel() {
     <Card class="overflow-hidden">
       <div class="border-b p-4">
         <p class="text-sm text-muted-foreground">
-          这里只含手工调账（adj-）与代充（rc-）；用量扣费、订阅扣款、分享返额记在用户流水里，
-          不代表漏了。
+          只含手工调账与代充；用量扣费、订阅扣款、分享返额记在用户流水里。
         </p>
         <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div class="space-y-2">
