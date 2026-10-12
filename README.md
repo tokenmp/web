@@ -221,7 +221,7 @@ bun run start     # 运行生产构建
 | API 密钥 | `/api/user/api_keys` 自助四支，`/api/admin/users/{id}/api_keys` 与 `/api/admin/api_keys/{id}` 管理端；含停用启用与属性编辑 |
 | 套餐与订阅 | `/api/admin/plans` 与 `/api/admin/plan_prices/{id}` 定价、`/api/admin/plans/{id}/enable` 恢复、`/api/admin/plan-activations*` 激活统计；`/api/user/plans`、订阅、`/api/user/plans/cancel`、`/api/admin/users/{id}/subscription` 退订退款 |
 | 充值 | `/api/user/recharge` 下单与我的充值单、`/api/admin/recharge` 管理端列表、`/api/internal/recharge-callback` 渠道回调（按 order_no 幂等） |
-| 用量与账单 | `/api/user/{usage,request-records,billing-records}`、`/api/admin/{request-records,billing-records,dashboard}`、`/api/internal/records` 网关回写（按 request_id 幂等） |
+| 用量与账单 | `/api/user/{usage,request-records,billing-records}`、`/api/admin/{request-records,billing-records,dashboard}`、`/api/internal/records` 网关回写（按 request_id 幂等，新插进去的计费行当场按 `revenue_amount` 扣费） |
 | 认证 | `/api/auth/{login,register,logout,me,password}` |
 
 充值走管理员代充，就是调账接口带 `source: "recharge"`。用户也能自助下单
@@ -240,11 +240,23 @@ bun run start     # 运行生产构建
 
 `credit_available` 不落库，每次由 `credit_limit` 与 `credit_used` 现算，免得三个数各写各的。
 记账只有一处实现（[src/lib/ledger.ts](src/lib/ledger.ts)），调账、代充、订阅、
-将来转发侧的用量扣费都走它：
+转发侧的用量扣费都走它：
 
 - 入账（正数）先冲抵已用的信用额度，剩下的才进余额。
 - 扣款（负数）先扣余额，不够再占信用额度。
 - 调账允许透支，管理动作不该被余额拦住；订阅用同一套逻辑但不允许，不够就回 402。
+
+转发侧推上来的计费行（[src/lib/records.ts](src/lib/records.ts) 的 `ingestRecords`）在摄入时
+一并扣费，走哪个口袋由本机判：
+
+- 有生效订阅（`status='active'` 里 `period_end` 最晚那条）且这一笔放得进剩余额度，记
+  `ledger='quota'`，只累加 `subscriptions.quota_used`，不动余额。额度是次数（`quota_kind='requests'`）
+  的订阅不走额度，收入是元，没法拿去比。
+- 额度放不下或没有订阅，记 `ledger='balance'`，按 `revenue_amount` 调 `applyCreditTx`。
+- 一笔调用只落一种 ledger，不拆成两笔。余额与信用都不够时允许透支，与调账一致：
+  请求已经发生，摄入时拒绝只会丢数据，`credit_transactions.delta` 与 `revenue_amount` 一一对应。
+- 插行、扣费、回填 `billing_records.ledger` 在同一个事务里；扣费只挂在确实新插进去的行上，
+  同一个 `request_id` 重发不会扣第二次。
 
 整个动作在一个事务里，先 `SELECT ... FOR UPDATE` 锁住用户行，两个人同时给一个用户调账
 不会丢更新。订阅在同一个事务里做完扣款、写订阅、改 `plan_id` 三件事。
