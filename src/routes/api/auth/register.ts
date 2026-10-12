@@ -59,5 +59,5 @@ export async function POST({ request }: APIEvent) {
   const [user] = await db.select().from(users).where(eq(users.id, created.id)).limit(1);
   const token = await signSession({ sub: user.id, tv: user.tokenVersion, role: user.role });
 
-  return json({ token, user: publicUser(user) }, 201, { "set-cookie": sessionCookie(token) });
+  return json({ token, user: publicUser(user) }, 201, { "set-cookie": sessionCookie(token, request) });
 }

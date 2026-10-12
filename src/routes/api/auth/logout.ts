@@ -8,6 +8,6 @@ import { json } from "~/lib/http";
  *
  * 会话是无状态 JWT，服务端没东西可清，把 cookie 抹掉就够了。
  */
-export async function POST(_event: APIEvent) {
-  return json({ ok: true }, 200, { "set-cookie": clearSessionCookie() });
+export async function POST({ request }: APIEvent) {
+  return json({ ok: true }, 200, { "set-cookie": clearSessionCookie(request) });
 }
