@@ -150,6 +150,8 @@ afterAll(async () => {
   await conn.query("DELETE FROM subscriptions WHERE user_id = ? OR plan_id = ?", [userId, planId]);
   await conn.query("DELETE FROM api_keys WHERE user_id = ?", [userId]);
   await conn.query("DELETE FROM user_budgets WHERE user_id = ?", [userId]);
+  await conn.query("DELETE FROM billing_records WHERE request_id LIKE 't-e2e-%'");
+  await conn.query("DELETE FROM request_records WHERE request_id LIKE 't-e2e-%'");
   await conn.query("DELETE FROM plan_prices WHERE plan_id = ?", [planId]);
   await conn.query("DELETE FROM plans WHERE id = ?", [planId]);
   if (userId) await conn.query("DELETE FROM users WHERE id = ?", [userId]);
@@ -634,5 +636,170 @@ describe("内部密钥校验端点", () => {
     expect(code).not.toMatch(/bcrypt/i);
     expect(code).toContain("hashApiKey");
     expect(code).toContain("apiKeys.keyHash");
+  });
+});
+
+describe("摄入时一并记账", () => {
+  const ingest = (body: unknown) =>
+    call(recordsIngestPost, { method: "POST", path: "/api/internal/records", headers: recordsSecretHeaders, body });
+
+  const adjust = (amount: number, reason: string) =>
+    call(adjustPost, {
+      method: "POST",
+      path: "/api/admin/balances/adjust",
+      token: adminToken,
+      body: { user_id: userId, amount, reason, source: "recharge" },
+    });
+
+  const subscribe = () =>
+    call(subscribePost, {
+      method: "POST",
+      path: `/api/user/plans/${planId}/subscribe`,
+      token: userToken,
+      params: { id: String(planId) },
+    });
+
+  /** 每个用例自己造 request_id，跑完 afterAll 清掉，重复跑不会撞唯一键 */
+  let seq = 0;
+  const requestId = () => `t-e2e-ingest-${stamp}-${++seq}`;
+  const billingRow = (id: string, revenue: number, extra: Record<string, unknown> = {}) => ({
+    request_id: id,
+    user_id: userId,
+    model: "gpt-4o",
+    revenue_amount: revenue,
+    total_tokens: 10,
+    ...extra,
+  });
+
+  async function balanceOf() {
+    const [rows] = (await conn.query("SELECT balance, credit_used, credit_limit FROM users WHERE id = ?", [userId])) as any[];
+    return {
+      balance: Number(rows[0].balance),
+      creditUsed: Number(rows[0].credit_used),
+      creditLimit: Number(rows[0].credit_limit),
+    };
+  }
+
+  async function quotaUsed() {
+    const [rows] = (await conn.query(
+      "SELECT quota_used FROM subscriptions WHERE user_id = ? AND status = 'active' ORDER BY period_end DESC LIMIT 1",
+      [userId],
+    )) as any[];
+    return rows[0] ? Number(rows[0].quota_used) : null;
+  }
+
+  async function usageTx(refId: string) {
+    const [rows] = (await conn.query(
+      "SELECT delta, source, ledger, ref_id, balance_after FROM credit_transactions WHERE ref_id = ? ORDER BY id",
+      [refId],
+    )) as any[];
+    return rows;
+  }
+
+  async function billingLedger(refId: string) {
+    const [rows] = (await conn.query("SELECT ledger FROM billing_records WHERE request_id = ?", [refId])) as any[];
+    return rows[0]?.ledger ?? null;
+  }
+
+  test("没有订阅时按 revenue_amount 扣余额，并写一条 usage 流水", async () => {
+    await resetUser();
+    await adjust(100, "摄入前充值");
+
+    const rid = requestId();
+    const res = await ingest({
+      records: [{ request_id: rid, user_id: userId, model: "gpt-4o" }],
+      billing: [billingRow(rid, 0.5)],
+    });
+    expect(res.status).toBe(200);
+    expect([res.body.ok, res.body.inserted, res.body.skipped, res.body.invalid]).toEqual([true, 2, 0, 0]);
+
+    const tx = await usageTx(rid);
+    expect(tx).toHaveLength(1);
+    expect([tx[0].source, tx[0].ledger, tx[0].ref_id, Number(tx[0].delta)]).toEqual(["usage", "balance", rid, -0.5]);
+    expect((await balanceOf()).balance).toBe(99.5);
+    expect(await billingLedger(rid)).toBe("balance");
+  });
+
+  test("同一批重复提交只扣一次，批量内部的重复也去重", async () => {
+    await resetUser();
+    await adjust(100, "摄入前充值");
+
+    const rid = requestId();
+    const batch = { records: [{ request_id: rid, user_id: userId }], billing: [billingRow(rid, 2)] };
+
+    const first = await ingest(batch);
+    expect([first.body.inserted, first.body.skipped]).toEqual([2, 0]);
+    // 转发侧重发整批：插行全跳，钱也不能再扣
+    const second = await ingest(batch);
+    expect([second.body.inserted, second.body.skipped]).toEqual([0, 2]);
+    expect((await balanceOf()).balance).toBe(98);
+    expect(await usageTx(rid)).toHaveLength(1);
+
+    // 同一批里塞两行同一个 request_id，只留第一条
+    const dup = requestId();
+    const third = await ingest({ billing: [billingRow(dup, 3), billingRow(dup, 3)] });
+    expect([third.body.inserted, third.body.skipped]).toEqual([1, 1]);
+    expect((await balanceOf()).balance).toBe(95);
+    expect(await usageTx(dup)).toHaveLength(1);
+  });
+
+  test("有订阅时先吃额度，额度满了才整笔走余额", async () => {
+    await resetUser();
+    await adjust(100, "摄入前充值");
+    // 订阅扣 10 元，余额 90，额度 10，quota_used 从 0 起
+    expect((await subscribe()).status).toBe(200);
+    expect(await quotaUsed()).toBe(0);
+
+    const a = requestId();
+    const b = requestId();
+    const c = requestId();
+    const res = await ingest({ billing: [billingRow(a, 4), billingRow(b, 6), billingRow(c, 1)] });
+    expect(res.body.inserted).toBe(3);
+
+    // 前两笔吃额度，加起来正好 10；第三笔额度不够，整笔走余额
+    expect([await billingLedger(a), await billingLedger(b), await billingLedger(c)]).toEqual(["quota", "quota", "balance"]);
+    expect(await quotaUsed()).toBe(10);
+
+    // 额度的两笔不动余额，也不写 credit_transactions
+    expect(await usageTx(a)).toHaveLength(0);
+    expect(await usageTx(b)).toHaveLength(0);
+
+    const tx = await usageTx(c);
+    expect([tx.length, tx[0].ledger, Number(tx[0].delta)]).toEqual([1, "balance", -1]);
+    expect((await balanceOf()).balance).toBe(89);
+  });
+
+  test("余额与信用都不够时按透支处理，delta 与 revenue_amount 一一对应", async () => {
+    await resetUser();
+    // 余额 0，授信也收掉，可用额度就是 0
+    await call(adminUserPut, {
+      method: "PUT",
+      path: `/api/admin/users/${userId}`,
+      token: adminToken,
+      params: { id: String(userId) },
+      body: { credit_limit: 0 },
+    });
+
+    const rid = requestId();
+    const res = await ingest({ billing: [billingRow(rid, 5)] });
+    expect(res.status).toBe(200);
+    expect(res.body.inserted).toBe(1);
+
+    const tx = await usageTx(rid);
+    expect([tx.length, Number(tx[0].delta), Number(tx[0].balance_after), tx[0].ledger]).toEqual([1, -5, 0, "balance"]);
+    const u = await balanceOf();
+    // 余额扣到 0 为止，剩下 5 元占信用，可用额度成负数
+    expect([u.balance, u.creditUsed]).toEqual([0, 5]);
+    expect(u.creditLimit - u.creditUsed).toBe(-5);
+    expect(await billingLedger(rid)).toBe("balance");
+  });
+
+  test("billing 行的用户不存在时照常入库，只是不扣费", async () => {
+    const rid = requestId();
+    const res = await ingest({ billing: [billingRow(rid, 1, { user_id: 99999999 })] });
+    expect(res.status).toBe(200);
+    expect(res.body.inserted).toBe(1);
+    expect(await usageTx(rid)).toHaveLength(0);
+    expect(await billingLedger(rid)).toBeNull();
   });
 });
