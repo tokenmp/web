@@ -153,9 +153,7 @@ export default function PanelKeys() {
       </Show>
 
       <Card class="overflow-hidden">
-        {/* 右边距比默认的 16px 收窄一档，主按钮贴卡片右缘近一点。
-            左边的搜索框仍然是 16px，跟表头第一列对齐 */}
-        <Toolbar class="pr-2">
+        <Toolbar>
           <ToolbarSearch
             placeholder="搜索名称 / 前缀"
             ariaLabel="搜索密钥"
