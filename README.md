@@ -226,7 +226,8 @@ bun run start     # 运行生产构建
 
 充值走管理员代充，就是调账接口带 `source: "recharge"`。用户也能自助下单
 （`/api/user/recharge`），但目前接的是模拟渠道，入账要等回调，真接渠道只需换回调来源与验签。
-生产必须配 `RECHARGE_CALLBACK_SECRET`，启动前的检查会拦。
+生产必须配 `RECORDS_CALLBACK_SECRET`（转发内核的记录摄入与客户端密钥校验）与
+`RECHARGE_CALLBACK_SECRET`（充值渠道回调）两把密钥，启动前的检查会拦。
 
 ### 账本口径
 

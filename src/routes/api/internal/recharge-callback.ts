@@ -1,9 +1,9 @@
 import type { APIEvent } from "@solidjs/start/server";
 
+import { checkRechargeSecret } from "~/lib/callback-secret";
 import { errorJson, json, num } from "~/lib/http";
 import {
   CALLBACK_STATUSES,
-  checkCallbackSecret,
   processRechargeCallback,
   serializeOrder,
   type CallbackStatus,
@@ -11,7 +11,8 @@ import {
 import { checkText } from "~/lib/validate";
 
 /**
- * 渠道支付回调。这个端点不由浏览器带着会话调，走 x-callback-secret 共享密钥。
+ * 渠道支付回调。这个端点不由浏览器带着会话调，走 x-callback-secret 共享密钥
+ *（RECHARGE_CALLBACK_SECRET，只给这一条路）。
  *
  * 幂等：同一张单重复回调只在第一次入账。判据是单子当前状态是不是 pending，
  * 落库与入账在 processRechargeCallback 的同一个事务里完成。
@@ -20,7 +21,7 @@ import { checkText } from "~/lib/validate";
  * 下面的处理逻辑不用动。
  */
 export async function POST({ request }: APIEvent) {
-  const denied = checkCallbackSecret(request, errorJson);
+  const denied = checkRechargeSecret(request, errorJson);
   if (denied) return denied;
 
   let body: Record<string, unknown> | null = null;

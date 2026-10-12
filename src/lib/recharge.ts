@@ -12,7 +12,7 @@
  * 而单子状态只有一个写入点，锁住它就够了。
  */
 
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { count, desc, eq } from "drizzle-orm";
 
 import { isDuplicateEntry } from "./db-error";
@@ -27,60 +27,6 @@ export type CallbackStatus = (typeof CALLBACK_STATUSES)[number];
 
 /** 默认渠道。没接真渠道之前，下单与回调都走它 */
 export const DEFAULT_CHANNEL = "mock";
-
-/**
- * 内部端点（充值回调、记录摄入）共用的共享密钥。
- *
- * 这两个端点不由浏览器调用，走不了会话 cookie —— 重启网关进程时也没有登录态可用。
- * 用环境变量里的一个共享串做机器对机器的认证，够用且不引新依赖。
- *
- * 没配时只在非生产环境放行（本机开发方便），并在模块加载（进程启动）时警告一句；
- * 生产环境缺密钥直接拒绝，避免把「能随便给人加钱」的端点暴露出去。
- */
-export function callbackSecret(): string | null {
-  const value = process.env.RECHARGE_CALLBACK_SECRET;
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-if (!callbackSecret() && process.env.NODE_ENV !== "production") {
-  console.warn(
-    "[内部端点] RECHARGE_CALLBACK_SECRET 没有配置，" +
-      "充值回调与记录摄入只在非生产环境放行。生产环境必须设置它。",
-  );
-}
-
-/** 定长比较，避免按字符逐位比较泄漏长度与差异位置 */
-function secretMatches(got: string, expected: string) {
-  const a = Buffer.from(got);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
-/**
- * 校验内部调用的共享密钥。通过返回 null，不通过返回可以直接 return 的响应。
- *
- * 401 与 403 分开：没带密钥是没认证，带了但不对是认证失败。
- */
-export function checkCallbackSecret(
-  request: Request,
-  makeError: (message: string, status: number) => Response,
-): Response | null {
-  const expected = callbackSecret();
-  if (!expected) {
-    if (process.env.NODE_ENV === "production") {
-      return makeError("内部回调密钥未配置，已拒绝调用", 503);
-    }
-    return null;
-  }
-
-  const got = request.headers.get("x-callback-secret");
-  if (!got) return makeError("缺少 x-callback-secret 请求头", 401);
-  if (!secretMatches(got, expected)) return makeError("x-callback-secret 不正确", 403);
-  return null;
-}
 
 /** 单号形如 rc-1699999999999-a1b2c3d4，时间戳便于人肉排序，随机段避免同毫秒撞车 */
 function generateOrderNo() {
