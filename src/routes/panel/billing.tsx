@@ -1,5 +1,4 @@
 import { Title } from "@solidjs/meta";
-import Search from "lucide-solid/icons/search";
 import { createEffect, createSignal, on, Show } from "solid-js";
 
 import { CopyableId } from "~/components/panel/copyable-id";
@@ -10,11 +9,11 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { DecimalSplit } from "~/components/ui/decimal-split";
-import { Input } from "~/components/ui/input";
 import { PagerIfNeeded } from "~/components/ui/pager";
 import { Segmented } from "~/components/ui/segmented";
 import { Select } from "~/components/ui/select";
 import { Sheet, SheetClose } from "~/components/ui/sheet";
+import { Toolbar, ToolbarDivider, ToolbarSearch, ToolbarSpacer } from "~/components/ui/toolbar";
 import { billingStatusMeta, ledgerMeta, type BadgeMeta } from "~/lib/panel-labels";
 import { createClientResource } from "~/lib/resource";
 import { getBillingRecords, getRequestRecordFilters, type BillingRecord } from "~/lib/usage";
@@ -110,20 +109,17 @@ export default function PanelBilling() {
 
 
       <Card class="overflow-hidden">
-        <div class="flex flex-wrap items-center gap-2 border-b p-4">
-          <div class="relative w-full sm:w-72">
-            <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              class="pl-8"
-              placeholder="搜索请求 ID / 模型"
-              aria-label="搜索账单流水"
-              value={keyword()}
-              onInput={event => {
-                setKeyword(event.currentTarget.value);
-                setPage(1);
-              }}
-            />
-          </div>
+        <Toolbar>
+          <ToolbarSearch
+            placeholder="搜索请求 ID / 模型"
+            ariaLabel="搜索账单流水"
+            value={keyword()}
+            onInput={value => {
+              setKeyword(value);
+              setPage(1);
+            }}
+            class="sm:w-72"
+          />
           <Segmented
             options={STATUS_TABS}
             value={status()}
@@ -133,6 +129,7 @@ export default function PanelBilling() {
             }}
             ariaLabel="按状态筛选"
           />
+          <ToolbarDivider />
           <Segmented
             options={CHARGE_TABS}
             value={charge()}
@@ -153,10 +150,11 @@ export default function PanelBilling() {
               setPage(1);
             }}
           />
-          <Button variant="outline" class="lg:ml-auto" onClick={reset}>
+          <ToolbarSpacer />
+          <Button variant="outline" onClick={reset}>
             重置
           </Button>
-        </div>
+        </Toolbar>
 
         <Show when={list.error()}>
           <p class="border-b bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
@@ -242,12 +240,13 @@ export default function PanelBilling() {
           emptyDescription={hasFilter() ? "试试调整搜索词或筛选条件" : "还没有产生计费记录"}
         />
 
-        <div class="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/60 px-5 py-3">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/60 px-4 py-3">
           <p class="text-sm text-muted-foreground">
             本页 {formatNumber(list.data().items.length)} 条，消耗{" "}
             <DecimalSplit text={formatPoints(pageRevenue())} /> 积分（共 {formatNumber(list.data().total)} 条）
           </p>
           <PagerIfNeeded
+            class="px-0 py-0"
             page={page()}
             size={pageSize()}
             total={list.data().total}

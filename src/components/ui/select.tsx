@@ -43,7 +43,12 @@ export function Select(props: {
    * 读屏才会念「目标渠道组，知远分享的 OpenAI 池」。
    */
   label?: string;
-  /** 标签位置：top 占一行（表单里），inline 跟触发器同行（工具栏里） */
+  /**
+   * 标签位置：top 占一行（表单、弹窗里），inline 跟触发器同行（工具条里）。
+   *
+   * 两种写法的标签块高度是靠 leading-none 对齐的：手写的标签块是 space-y-1.5 套 Label，
+   * Label 带 leading-none 只有 14px；这里如果留默认行高就是 20px，同一行两个控件会差 6px。
+   */
   labelPlacement?: "top" | "inline";
   disabled?: boolean;
   /** 触发器的宽度等 */
@@ -92,7 +97,9 @@ export function Select(props: {
         <div class={cn(inline() && "flex items-center gap-2")}>
           <KSelect.Label
             class={cn(
-              inline() ? "shrink-0 text-sm text-muted-foreground" : "mb-1.5 block text-sm font-medium",
+              inline()
+                ? "shrink-0 whitespace-nowrap text-sm text-muted-foreground"
+                : "mb-1.5 block text-sm font-medium leading-none",
             )}
           >
             {props.label}

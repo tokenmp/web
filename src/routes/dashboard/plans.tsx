@@ -20,6 +20,7 @@ import { PagerIfNeeded } from "~/components/ui/pager";
 import { Segmented } from "~/components/ui/segmented";
 import { Select } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
+import { Toolbar, ToolbarDivider, ToolbarSpacer } from "~/components/ui/toolbar";
 import {
   Table,
   TableBody,
@@ -293,44 +294,46 @@ export default function DashboardPlans() {
       </Show>
 
       <Card class="mt-6 overflow-hidden">
-        <div class="flex flex-wrap items-end gap-3 border-b p-4">
+        <Toolbar>
           <div>
             <h2 class="font-semibold tracking-tight">订阅与激活</h2>
-            <p class="mt-0.5 text-sm text-muted-foreground">
-              按用户聚合
-            </p>
+            <p class="mt-0.5 text-sm text-muted-foreground">按用户聚合</p>
           </div>
 
-          <div class="flex flex-wrap items-end gap-3 lg:ml-auto">
-            <Select
-              label="套餐"
-              labelPlacement="inline"
-              class="w-44"
-              options={planOptions()}
-              value={actPlanId()}
-              onChange={setActPlanId}
-              placeholder="全部套餐"
-            />
-            <div class="space-y-1.5">
-              <Label for="activation-user">用户 ID</Label>
-              <Input
-                id="activation-user"
-                type="number"
-                min="1"
-                class="w-28"
-                placeholder="全部"
-                value={actUserId()}
-                onInput={event => setActUserId(event.currentTarget.value)}
-              />
-            </div>
-            <Segmented
-              options={EXPIRE_OPTIONS}
-              value={actExpire()}
-              onChange={setActExpire}
-              ariaLabel="按到期时间筛选订阅"
-            />
-          </div>
-        </div>
+          <ToolbarSpacer />
+
+          <Select
+            label="套餐"
+            labelPlacement="inline"
+            class="w-44"
+            options={planOptions()}
+            value={actPlanId()}
+            onChange={setActPlanId}
+            placeholder="全部套餐"
+          />
+          <Label
+            for="activation-user"
+            class="shrink-0 whitespace-nowrap text-muted-foreground"
+          >
+            用户 ID
+          </Label>
+          <Input
+            id="activation-user"
+            type="number"
+            min="1"
+            class="w-28"
+            placeholder="全部"
+            value={actUserId()}
+            onInput={event => setActUserId(event.currentTarget.value)}
+          />
+          <ToolbarDivider />
+          <Segmented
+            options={EXPIRE_OPTIONS}
+            value={actExpire()}
+            onChange={setActExpire}
+            ariaLabel="按到期时间筛选订阅"
+          />
+        </Toolbar>
 
         <Show when={activations.error()}>
           <div class="border-b px-4 py-6 text-center text-sm">
@@ -412,15 +415,13 @@ export default function DashboardPlans() {
           </TableBody>
         </Table>
 
-        <div class="px-4">
-          <PagerIfNeeded
-            page={actPage()}
-            size={actSize()}
-            total={activations.data().total}
-            onPageChange={changeActPage}
-            onSizeChange={changeActSize}
-          />
-        </div>
+        <PagerIfNeeded
+          page={actPage()}
+          size={actSize()}
+          total={activations.data().total}
+          onPageChange={changeActPage}
+          onSizeChange={changeActSize}
+        />
       </Card>
 
       <Card class="mt-4 p-5">

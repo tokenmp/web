@@ -148,22 +148,20 @@ export default function PanelCredits() {
           }
         />
 
-        <div class="px-5">
-          <PagerIfNeeded
-            page={page()}
-            size={pageSize()}
-            total={data().total}
-            onPageChange={next => {
-              setPage(next);
-              void reload();
-            }}
-            onSizeChange={value => {
-              setPageSize(value);
-              setPage(1);
-              void reload();
-            }}
-          />
-        </div>
+        <PagerIfNeeded
+          page={page()}
+          size={pageSize()}
+          total={data().total}
+          onPageChange={next => {
+            setPage(next);
+            void reload();
+          }}
+          onSizeChange={value => {
+            setPageSize(value);
+            setPage(1);
+            void reload();
+          }}
+        />
       </Card>
     </>
   );

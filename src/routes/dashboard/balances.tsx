@@ -1,6 +1,5 @@
 import { Title } from "@solidjs/meta";
 import Plus from "lucide-solid/icons/plus";
-import Search from "lucide-solid/icons/search";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 
 import { PageHeader, StatRow } from "~/components/layout/page-header";
@@ -14,6 +13,7 @@ import { PagerIfNeeded } from "~/components/ui/pager";
 import { Segmented } from "~/components/ui/segmented";
 import { Select } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
+import { Toolbar, ToolbarSearch, ToolbarSpacer } from "~/components/ui/toolbar";
 import {
   Table,
   TableBody,
@@ -196,21 +196,19 @@ export default function DashboardBalances() {
         <StatRow items={stats()} />
 
         <Card class="overflow-hidden">
-          <div class="flex flex-wrap items-center gap-3 border-b p-4">
-            <div class="relative w-full sm:max-w-xs">
-              <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                class="pl-9"
-                placeholder="搜索用户名"
-                aria-label="搜索用户"
-                value={keyword()}
-                onInput={event => onSearchInput(event.currentTarget.value)}
-              />
-            </div>
-            <p class="text-sm text-muted-foreground lg:ml-auto">
+          <Toolbar>
+            <ToolbarSearch
+              placeholder="搜索用户名"
+              ariaLabel="搜索用户"
+              value={keyword()}
+              onInput={onSearchInput}
+              class="sm:max-w-xs"
+            />
+            <ToolbarSpacer />
+            <p class="text-sm text-muted-foreground">
               代充是 source=recharge 的入账，调账可正可负，两者都允许透支
             </p>
-          </div>
+          </Toolbar>
 
           <Show when={accounts.error()}>
             <div class="border-b px-4 py-6 text-center text-sm">
@@ -334,22 +332,20 @@ export default function DashboardBalances() {
             </TableBody>
           </Table>
 
-          <div class="px-4">
-            <PagerIfNeeded
-              page={page()}
-              size={size()}
-              total={accounts.data().total}
-              onPageChange={next => {
-                setPage(next);
-                void accounts.reload();
-              }}
-              onSizeChange={next => {
-                setSize(next);
-                setPage(1);
-                void accounts.reload();
-              }}
-            />
-          </div>
+          <PagerIfNeeded
+            page={page()}
+            size={size()}
+            total={accounts.data().total}
+            onPageChange={next => {
+              setPage(next);
+              void accounts.reload();
+            }}
+            onSizeChange={next => {
+              setSize(next);
+              setPage(1);
+              void accounts.reload();
+            }}
+          />
         </Card>
       </Show>
 
@@ -536,7 +532,7 @@ function BalanceActionDialog(props: {
 
       <Show when={!result()}>
         <Show when={props.action === "recharge" || props.action === "adjust"}>
-          <div class="space-y-2">
+          <div class="space-y-1.5">
             <Label for="balance-amount">
               {props.action === "recharge" ? "充值金额（美元）" : "调账金额（美元）"}
             </Label>
@@ -566,7 +562,7 @@ function BalanceActionDialog(props: {
         </Show>
 
         <Show when={props.action === "credit"}>
-          <div class="space-y-2">
+          <div class="space-y-1.5">
             <Label for="balance-credit">新的授信额度（美元）</Label>
             <Input
               id="balance-credit"
@@ -589,7 +585,7 @@ function BalanceActionDialog(props: {
               onChange={setBudgetEnabled}
               label="启用预算封顶"
             />
-            <div class="space-y-2">
+            <div class="space-y-1.5">
               <Label for="balance-budget">预算金额（美元）</Label>
               <Input
                 id="balance-budget"
@@ -737,7 +733,7 @@ function BatchRechargeDialog(props: {
       }
     >
       <Show when={!result()}>
-        <div class="space-y-2">
+        <div class="space-y-1.5">
           <span class="text-sm font-medium">充值范围</span>
           <Segmented
             options={[
@@ -874,12 +870,12 @@ function AdjustLogsPanel() {
 
   return (
     <Card class="overflow-hidden">
-      <div class="border-b p-4">
+      <div class="space-y-3 border-b px-4 py-3">
         <p class="text-sm text-muted-foreground">
           只含手工调账与代充；用量扣费、订阅扣款、分享返额记在用户流水里。
         </p>
-        <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div class="space-y-2">
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div class="space-y-1.5">
             <Label for="log-operator">操作人</Label>
             <Input
               id="log-operator"
@@ -888,7 +884,7 @@ function AdjustLogsPanel() {
               onInput={event => setOperator(event.currentTarget.value)}
             />
           </div>
-          <div class="space-y-2">
+          <div class="space-y-1.5">
             <Label for="log-user">用户 ID</Label>
             <Input
               id="log-user"
@@ -898,7 +894,7 @@ function AdjustLogsPanel() {
               onInput={event => setUserId(event.currentTarget.value)}
             />
           </div>
-          <div class="space-y-2">
+          <div class="space-y-1.5">
             <Label for="log-ref">流水号</Label>
             <Input
               id="log-ref"
@@ -917,7 +913,7 @@ function AdjustLogsPanel() {
             value={direction()}
             onChange={value => setDirection(value as "all" | AdjustDirection)}
           />
-          <div class="space-y-2">
+          <div class="space-y-1.5">
             <Label for="log-start">开始时间</Label>
             <Input
               id="log-start"
@@ -926,7 +922,7 @@ function AdjustLogsPanel() {
               onInput={event => setStart(event.currentTarget.value)}
             />
           </div>
-          <div class="space-y-2">
+          <div class="space-y-1.5">
             <Label for="log-end">结束时间</Label>
             <Input
               id="log-end"
@@ -1015,22 +1011,20 @@ function AdjustLogsPanel() {
         </TableBody>
       </Table>
 
-      <div class="px-4">
-        <PagerIfNeeded
-          page={page()}
-          size={size()}
-          total={logs.data().total}
-          onPageChange={next => {
-            setPage(next);
-            void logs.reload();
-          }}
-          onSizeChange={next => {
-            setSize(next);
-            setPage(1);
-            void logs.reload();
-          }}
-        />
-      </div>
+      <PagerIfNeeded
+        page={page()}
+        size={size()}
+        total={logs.data().total}
+        onPageChange={next => {
+          setPage(next);
+          void logs.reload();
+        }}
+        onSizeChange={next => {
+          setSize(next);
+          setPage(1);
+          void logs.reload();
+        }}
+      />
     </Card>
   );
 }

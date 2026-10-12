@@ -1,4 +1,3 @@
-import Activity from "lucide-solid/icons/activity";
 import KeyRound from "lucide-solid/icons/key-round";
 import LayoutDashboard from "lucide-solid/icons/layout-dashboard";
 import Library from "lucide-solid/icons/library";
@@ -10,57 +9,38 @@ import Share2 from "lucide-solid/icons/share-2";
 import UserRound from "lucide-solid/icons/user-round";
 import Wallet from "lucide-solid/icons/wallet";
 
-import type { PanelNavGroup, PanelTabItem } from "~/components/layout/panel-shell";
+import type { NavItem } from "~/components/layout/app-shell";
 
 /**
  * 用户面板导航。
  *
- * 分成 模型与密钥 / 数据 / 财务 / 账户 四组 —— 用户面板比控制台多得多，
- * 十项平铺在侧边栏里会看不出主次。概览不归组，置顶。
+ * 跟控制台的 nav.tsx 是同一份写法：一列平铺，标了 primary 的进手机底栏。
+ * 面板原来按 模型与密钥 / 数据 / 财务 / 账户 分四组，配一套单独的侧栏外壳；
+ * 现在两套界面共用 app-shell，外壳不给分组留位置，这里就展平成一列，
+ * 顺序跟分组时保持一致。
  *
- * 手机底栏只放五个：概览、密钥、模型、请求、我的。渠道与账号这些
- * 一周看不了几次的，从概览的统计卡或「我的」页进。
+ * 手机底栏放四个最常点的：概览、我的密钥、请求日志、个人中心。
+ * 剩下的模型目录、套餐、账单流水、余额明细、我的账号、我的渠道收在「更多」抽屉里。
  */
-export const panelNav: PanelNavGroup[] = [
+export const panelNav: NavItem[] = [
+  { href: "/panel", label: "概览", primary: true, icon: () => <LayoutDashboard class="size-4" /> },
+  { href: "/panel/models", label: "模型目录", icon: () => <Library class="size-4" /> },
+  { href: "/panel/keys", label: "我的密钥", primary: true, icon: () => <KeyRound class="size-4" /> },
   {
-    items: [{ href: "/panel", label: "概览", icon: () => <LayoutDashboard class="size-4" />, end: true }],
+    href: "/panel/request-records",
+    label: "请求日志",
+    primary: true,
+    icon: () => <ScrollText class="size-4" />,
   },
+  { href: "/panel/plans", label: "套餐", icon: () => <Package class="size-4" /> },
+  { href: "/panel/billing", label: "账单流水", icon: () => <Receipt class="size-4" /> },
+  { href: "/panel/credits", label: "余额明细", icon: () => <Wallet class="size-4" /> },
+  { href: "/panel/accounts", label: "我的账号", icon: () => <Server class="size-4" /> },
+  { href: "/panel/channels", label: "我的渠道", icon: () => <Share2 class="size-4" /> },
   {
-    label: "模型与密钥",
-    items: [
-      { href: "/panel/models", label: "模型目录", icon: () => <Library class="size-4" /> },
-      { href: "/panel/keys", label: "我的密钥", icon: () => <KeyRound class="size-4" /> },
-    ],
+    href: "/panel/me",
+    label: "个人中心",
+    primary: true,
+    icon: () => <UserRound class="size-4" />,
   },
-  {
-    label: "数据",
-    items: [
-      { href: "/panel/request-records", label: "请求日志", icon: () => <ScrollText class="size-4" /> },
-    ],
-  },
-  {
-    label: "财务",
-    items: [
-      { href: "/panel/plans", label: "套餐", icon: () => <Package class="size-4" /> },
-      { href: "/panel/billing", label: "账单流水", icon: () => <Receipt class="size-4" /> },
-      { href: "/panel/credits", label: "余额明细", icon: () => <Wallet class="size-4" /> },
-    ],
-  },
-  {
-    label: "账户",
-    items: [
-      { href: "/panel/accounts", label: "我的账号", icon: () => <Server class="size-4" /> },
-      { href: "/panel/channels", label: "我的渠道", icon: () => <Share2 class="size-4" /> },
-      { href: "/panel/me", label: "个人中心", icon: () => <UserRound class="size-4" /> },
-    ],
-  },
-];
-
-/** 手机底栏。五项刚好铺满，拇指够得到，也不用记自己在哪一层 */
-export const panelTabs: PanelTabItem[] = [
-  { href: "/panel", label: "概览", icon: () => <LayoutDashboard class="size-5" />, end: true },
-  { href: "/panel/keys", label: "密钥", icon: () => <KeyRound class="size-5" /> },
-  { href: "/panel/models", label: "模型", icon: () => <Library class="size-5" /> },
-  { href: "/panel/request-records", label: "请求", icon: () => <Activity class="size-5" /> },
-  { href: "/panel/me", label: "我的", icon: () => <UserRound class="size-5" /> },
 ];

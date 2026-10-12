@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { Toolbar, ToolbarDivider, ToolbarSpacer } from "~/components/ui/toolbar";
 import { billingStatusMeta } from "~/lib/panel-labels";
 import { createClientResource } from "~/lib/resource";
 import { getAdminBillingRecords, type BillingRecord } from "~/lib/usage";
@@ -108,7 +109,7 @@ export default function DashboardBilling() {
       <StatRow items={stats()} />
 
       <Card class="overflow-hidden">
-        <div class="flex flex-wrap items-center gap-2 border-b p-4">
+        <Toolbar>
           <Segmented
             options={timeRanges}
             value={range()}
@@ -118,6 +119,9 @@ export default function DashboardBilling() {
             }}
             ariaLabel="时间范围"
           />
+
+          {/* 两组筛选之间要断开：之前两组只隔 8px，七个选项连成一片，看着像一个控件 */}
+          <ToolbarDivider />
 
           <Segmented
             options={statusTabs}
@@ -129,11 +133,13 @@ export default function DashboardBilling() {
             ariaLabel="流水状态"
           />
 
-          <Button variant="outline" class="ml-auto">
-            <Download class="size-4" />
+          <ToolbarSpacer />
+
+          <Button variant="outline">
+            <Download class="size-4" aria-hidden="true" />
             导出 CSV
           </Button>
-        </div>
+        </Toolbar>
 
         <Show when={list.error()}>
           <p class="border-b bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
@@ -189,7 +195,7 @@ export default function DashboardBilling() {
           </TableBody>
         </Table>
 
-        <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm text-muted-foreground">
+        <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-muted-foreground">
           <p aria-live="polite">
             共 {formatNumber(list.data().total)} 条，当前第 {formatNumber(page())} /{" "}
             {formatNumber(totalPages())} 页

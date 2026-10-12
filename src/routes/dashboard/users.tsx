@@ -5,7 +5,6 @@ import KeyRound from "lucide-solid/icons/key-round";
 import Pencil from "lucide-solid/icons/pencil";
 import RefreshCw from "lucide-solid/icons/refresh-cw";
 import RotateCcw from "lucide-solid/icons/rotate-ccw";
-import Search from "lucide-solid/icons/search";
 import Trash from "lucide-solid/icons/trash";
 import UserPlus from "lucide-solid/icons/user-plus";
 import Wallet from "lucide-solid/icons/wallet";
@@ -34,6 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { Toolbar, ToolbarSearch, ToolbarSpacer } from "~/components/ui/toolbar";
 import {
   createUser,
   createUserKey,
@@ -251,17 +251,14 @@ export default function DashboardUsers() {
       <StatRow items={stats()} />
 
       <Card class="overflow-hidden">
-        <div class="flex flex-wrap items-center gap-2 border-b p-4">
-          <div class="relative w-full sm:w-64">
-            <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              class="pl-8"
-              placeholder="按用户名或邮箱搜索"
-              aria-label="按用户名或邮箱搜索用户"
-              value={keywordInput()}
-              onInput={event => setKeywordInput(event.currentTarget.value)}
-            />
-          </div>
+        <Toolbar>
+          <ToolbarSearch
+            placeholder="按用户名或邮箱搜索"
+            ariaLabel="按用户名或邮箱搜索用户"
+            value={keywordInput()}
+            onInput={setKeywordInput}
+            class="sm:w-64"
+          />
 
           <Segmented
             options={STATUS_TABS}
@@ -274,39 +271,40 @@ export default function DashboardUsers() {
             ariaLabel="按用户状态筛选"
           />
 
-          <div class="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
-            <Select
-              label="排序"
-              labelPlacement="inline"
-              class="w-[8.5rem]"
-              options={SORT_OPTIONS}
-              value={sort()}
-              onChange={value => {
-                setSort(value as UserSort);
-                setPage(1);
-              }}
-            />
-            <Segmented
-              options={ORDER_TABS}
-              value={order()}
-              onChange={value => {
-                setOrder(value);
-                setPage(1);
-              }}
-              ariaLabel="排序方向"
-            />
-            <Button
-              variant="outline"
-              size="icon"
-              class="shrink-0"
-              aria-label="重新加载用户列表"
-              disabled={users.loading()}
-              onClick={() => void users.reload()}
-            >
-              <RefreshCw class="size-4" aria-hidden="true" />
-            </Button>
-          </div>
-        </div>
+          <ToolbarSpacer />
+
+          <Select
+            label="排序"
+            labelPlacement="inline"
+            // 手机上收窄一档，让刷新按钮能跟排序挤在同一行
+            class="w-32 sm:w-[8.5rem]"
+            options={SORT_OPTIONS}
+            value={sort()}
+            onChange={value => {
+              setSort(value as UserSort);
+              setPage(1);
+            }}
+          />
+          <Segmented
+            options={ORDER_TABS}
+            value={order()}
+            onChange={value => {
+              setOrder(value);
+              setPage(1);
+            }}
+            ariaLabel="排序方向"
+          />
+          <Button
+            variant="outline"
+            size="icon"
+            class="shrink-0"
+            aria-label="重新加载用户列表"
+            disabled={users.loading()}
+            onClick={() => void users.reload()}
+          >
+            <RefreshCw class="size-4" aria-hidden="true" />
+          </Button>
+        </Toolbar>
 
         <Show when={notice()}>
           <p
@@ -424,18 +422,16 @@ export default function DashboardUsers() {
           </TableBody>
         </Table>
 
-        <div class="px-5">
-          <Pager
-            page={page()}
-            size={size()}
-            total={users.data().total}
-            onPageChange={setPage}
-            onSizeChange={value => {
-              setSize(value);
-              setPage(1);
-            }}
-          />
-        </div>
+        <Pager
+          page={page()}
+          size={size()}
+          total={users.data().total}
+          onPageChange={setPage}
+          onSizeChange={value => {
+            setSize(value);
+            setPage(1);
+          }}
+        />
       </Card>
 
       <UserFormDialog

@@ -78,8 +78,7 @@ README 第 251 行只数了这八页。剩下十一页连本机后端都没有�
 | [dashboard/announcements.tsx](src/routes/dashboard/announcements.tsx) | `/api/admin/announcements*` | 已接 |
 | [announcement-banner.tsx](src/components/layout/announcement-banner.tsx) | `/api/announcements`、`/api/announcements/{id}/dismiss` | 已接 |
 | [notification-bell.tsx](src/components/layout/notification-bell.tsx) | `/api/notifications*` | 已接 |
-| [app-shell.tsx](src/components/layout/app-shell.tsx) | `/api/system/version`、`/api/auth/logout` | 已接 |
-| [panel-shell.tsx](src/components/layout/panel-shell.tsx) | `/api/auth/logout` | 已接 |
+| [app-shell.tsx](src/components/layout/app-shell.tsx) | 控制台与面板共用的外壳，`/api/system/version`、`/api/auth/logout` | 已接 |
 | [session.ts](src/lib/session.ts) | 直接验会话 cookie，不调 `/api/auth/me` | 绕过接口 |
 
 控制台十个页面：
