@@ -5,7 +5,6 @@ import Plus from "lucide-solid/icons/plus";
 import Trash from "lucide-solid/icons/trash";
 import { createMemo, createSignal, Show } from "solid-js";
 
-import { PageHeader } from "~/components/layout/page-header";
 import { ResponsiveTable } from "~/components/panel/responsive-table";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -14,7 +13,7 @@ import { Dialog } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Segmented } from "~/components/ui/segmented";
-import { Toolbar, ToolbarSearch } from "~/components/ui/toolbar";
+import { Toolbar, ToolbarSearch, ToolbarSpacer } from "~/components/ui/toolbar";
 import { keyStatusMeta } from "~/lib/panel-labels";
 import { createClientResource } from "~/lib/resource";
 import {
@@ -142,13 +141,6 @@ export default function PanelKeys() {
     <>
       <Title>我的密钥 | TokenMP 用户面板</Title>
 
-      <PageHeader>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus class="size-4" aria-hidden="true" />
-          新建密钥
-        </Button>
-      </PageHeader>
-
       <Show when={error()}>
         <p class="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
           {error()}
@@ -175,6 +167,13 @@ export default function PanelKeys() {
             onChange={setStatus}
             ariaLabel="按状态筛选密钥"
           />
+          {/* 新建密钥管的就是下面这张卡片，放在同一行：上面的页头只剩它一个按钮时
+              看起来像没做完的区块，中间还隔着一条错误提示的位置 */}
+          <ToolbarSpacer />
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus class="size-4" aria-hidden="true" />
+            新建密钥
+          </Button>
         </Toolbar>
 
         <ResponsiveTable

@@ -134,7 +134,7 @@
 | VersionLabel | 同上 | 页脚的系统版本号，桌面端在侧边栏底部，移动端在「更多」抽屉末尾 |
 | AnnouncementBanner | [announcement-banner.tsx](src/components/layout/announcement-banner.tsx) | 全站公告条，按级别着色（提示 / 注意 / 重要），可关闭的带关闭按钮 |
 | NotificationBell | [notification-bell.tsx](src/components/layout/notification-bell.tsx) | 顶栏通知铃铛，Kobalte Popover 装的列表，带未读徽标 |
-| PageHeader | [page-header.tsx](src/components/layout/page-header.tsx) | 页面头部：一句说明加右侧操作区。页面名由顶栏显示，这里不再重复放标题。说明占满剩下的宽度，所以只有按钮的页面按钮也停在右边 |
+| PageHeader | [page-header.tsx](src/components/layout/page-header.tsx) | 页面头部：一句说明加右侧操作区。页面名由顶栏显示，这里不再重复放标题。说明占满剩下的宽度，所以只有按钮的页面按钮也停在右边。按钮管的就是下面那张卡片时，放进卡片的工具条（`ToolbarSpacer` 顶到最右），页头只留给管整页的操作 |
 | StatRow | 同上 | 一排指标卡，页面概览用。有补充说明的卡片用 `mt-auto` 把说明压到底部，一排卡片的高度对齐 |
 
 ### 面板组件
