@@ -4,6 +4,9 @@
  * 数据的产生方是转发内核（另一个仓库），本机负责存、查、汇总。摄入走
  * `/api/internal/records`，用 request_id 做幂等键：网关重发同一批日志不会记两遍。
  *
+ * 计费行还要在场扣费：新插进去的 billing 行按 revenue_amount 记账，走哪个口袋
+ *（订阅额度还是余额）由本机判，与插行在同一个事务里，见下面的 chargeBilling。
+ *
  * 查询与聚合分成三层：
  *   - 列表：筛选 + 分页，字段形状照 openapi 的 RequestRecord / BillingRecord。
  *   - 用量序列：按天的 requests / tokens / revenue，外加按模型的拆分。
@@ -30,7 +33,15 @@ import {
 
 import { isDuplicateEntry } from "./db-error";
 import { db } from "./db";
-import { billingRecords, requestRecords, users, type BillingRecordRow, type RequestRecordRow } from "./schema";
+import { applyCreditTx, decimal8, LedgerError, round8, type LedgerTx } from "./ledger";
+import {
+  billingRecords,
+  requestRecords,
+  subscriptions,
+  users,
+  type BillingRecordRow,
+  type RequestRecordRow,
+} from "./schema";
 
 /* ------------------------------------------------------------------ 通用工具 */
 
@@ -232,20 +243,22 @@ type InsertRow = { requestId: string } & Record<string, unknown>;
 
 /**
  * 幂等插入：先批量查已有的 request_id，只插新的；撞车（并发）时逐行 INSERT IGNORE 兜底。
- * 返回真正插入的条数与被当成重复跳过的条数。
+ * 返回真正插进去的那几行与被当成重复跳过的条数 —— 扣费要挂在确实新插进去的行上，
+ * 只回两个计数不够用。事务由调用方开，插行与扣费共用同一个 tx。
  */
 async function insertNew(
+  tx: LedgerTx,
   table: RequestKeyedTable,
   rows: InsertRow[],
-): Promise<{ inserted: number; skipped: number }> {
-  if (rows.length === 0) return { inserted: 0, skipped: 0 };
+): Promise<{ inserted: InsertRow[]; skipped: number }> {
+  if (rows.length === 0) return { inserted: [], skipped: 0 };
 
   const existing = new Set<string>();
   for (const chunk of chunkArray(
     rows.map(row => row.requestId),
     400,
   )) {
-    const found = await db
+    const found = await tx
       .select({ requestId: table.requestId })
       .from(table)
       .where(inArray(table.requestId, chunk));
@@ -255,28 +268,129 @@ async function insertNew(
   const fresh = rows.filter(row => !existing.has(row.requestId));
   const skipped = rows.length - fresh.length;
 
-  let inserted = 0;
+  const inserted: InsertRow[] = [];
   for (const chunk of chunkArray(fresh, 80)) {
     try {
       // 两张表的列不同，这里只借用公共的 request_id 做去重，具体行交给 drizzle
-      await db.insert(table).values(chunk as never);
-      inserted += chunk.length;
+      await tx.insert(table).values(chunk as never);
+      inserted.push(...chunk);
     } catch (err) {
       if (!isDuplicateEntry(err)) throw err;
       for (const row of chunk) {
-        const result = (await db
+        const result = (await tx
           .insert(table)
           .ignore()
           .values(row as never)) as unknown;
         const header = (Array.isArray(result) ? result[0] : result) as
           | { affectedRows?: number }
           | undefined;
-        if ((header?.affectedRows ?? 0) > 0) inserted += 1;
+        if ((header?.affectedRows ?? 0) > 0) inserted.push(row);
       }
     }
   }
 
   return { inserted, skipped };
+}
+
+/** 当前生效订阅：status='active' 里 period_end 最晚那条，与 GET /user/plans 的口径一致 */
+async function activeSubscription(tx: LedgerTx, userId: number) {
+  const [row] = await tx
+    .select({ id: subscriptions.id, quotaKind: subscriptions.quotaKind })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.status, "active")))
+    .orderBy(desc(subscriptions.periodEnd))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * 试吃订阅额度。够不够由 WHERE 里的 quota_used + amount <= quota_limit 判，
+ * 判定与累加合成一条语句，两个人同时摄入同一用户不会把额度吃超。
+ * 返回 true 表示这一笔记 quota，否则把这一行留给余额。
+ *
+ * 只认 quota_kind='money'：requests 那档的单位是次数，收入的元没法拿去比。
+ */
+async function consumeQuota(
+  tx: LedgerTx,
+  subscription: { id: number; quotaKind: string },
+  amount: number,
+): Promise<boolean> {
+  if (subscription.quotaKind !== "money") return false;
+
+  const [result] = await tx
+    .update(subscriptions)
+    .set({ quotaUsed: sql`${subscriptions.quotaUsed} + ${decimal8(amount)}`, updatedAt: new Date() })
+    .where(
+      and(
+        eq(subscriptions.id, subscription.id),
+        sql`${subscriptions.quotaUsed} + ${decimal8(amount)} <= ${subscriptions.quotaLimit}`,
+      ),
+    );
+
+  return (result?.affectedRows ?? 0) > 0;
+}
+
+/** 把这一批的 ledger 回填到 billing_records：额度一组、余额一组，各写一次 */
+async function markLedger(tx: LedgerTx, requestIds: string[], ledger: "quota" | "balance") {
+  for (const chunk of chunkArray(requestIds, 400)) {
+    await tx.update(billingRecords).set({ ledger }).where(inArray(billingRecords.requestId, chunk));
+  }
+}
+
+/**
+ * 摄入时扣费。走哪个口袋由本机判：有生效订阅先吃订阅额度，额度不够或没有订阅才走余额。
+ * 一笔调用只落一种 ledger，不拆成两笔 —— 拆开之后 billing_records 与 credit_transactions
+ * 就对不上了。余额不够时允许透支，与调账一致：请求已经发生，拒绝只会丢数据。
+ *
+ * 传进来的必须是确实新插进去的 billing 行，跳过重复时不能扣费。
+ */
+async function chargeBilling(tx: LedgerTx, rows: InsertRow[]) {
+  // 同一用户的额度按批次里的先后顺序吃，先来先占
+  const byUser = new Map<number, { row: InsertRow; amount: number }[]>();
+  for (const row of rows) {
+    const amount = Number(row.revenueAmount);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    const userId = typeof row.userId === "number" ? row.userId : null;
+    if (userId === null) continue;
+    const list = byUser.get(userId) ?? [];
+    list.push({ row, amount: round8(amount) });
+    byUser.set(userId, list);
+  }
+
+  const quotaIds: string[] = [];
+  const balanceIds: string[] = [];
+
+  for (const [userId, list] of byUser) {
+    const subscription = await activeSubscription(tx, userId);
+
+    for (const { row, amount } of list) {
+      const requestId = String(row.requestId);
+      if (subscription && (await consumeQuota(tx, subscription, amount))) {
+        quotaIds.push(requestId);
+        continue;
+      }
+
+      try {
+        await applyCreditTx(tx, {
+          userId,
+          amount: -amount,
+          source: "usage",
+          refId: requestId,
+          model: typeof row.model === "string" ? row.model : null,
+          totalTokens: typeof row.totalTokens === "number" ? row.totalTokens : null,
+          ledger: "balance",
+          allowOverdraft: true,
+        });
+        balanceIds.push(requestId);
+      } catch (err) {
+        // 用户被删了就没人可扣。这一行留着不扣，不因为一条脏数据把整批回滚掉
+        if (!(err instanceof LedgerError) || err.code !== "user_not_found") throw err;
+      }
+    }
+  }
+
+  await markLedger(tx, quotaIds, "quota");
+  await markLedger(tx, balanceIds, "balance");
 }
 
 /** 同一批里出现两次同一个 request_id 时只留第一条，第二条算跳过 */
@@ -294,6 +408,7 @@ export type IngestResult = { inserted: number; skipped: number; invalid: number 
 /**
  * 摄入一批记录。records 与 billing 都可选，一次批量提交。
  * 不属于上述字段的键直接忽略；缺 request_id 的条目计入 invalid。
+ * 新插进去的 billing 行当场扣费，插行、扣费、回填 ledger 都在一个事务里。
  */
 export async function ingestRecords(payload: unknown): Promise<IngestResult> {
   const body = (payload ?? {}) as { records?: unknown; billing?: unknown };
@@ -319,16 +434,21 @@ export async function ingestRecords(payload: unknown): Promise<IngestResult> {
   const dedupedBilling = dedupeByRequestId(billing);
   const inBatchDuplicates = records.length - dedupedRecords.length + (billing.length - dedupedBilling.length);
 
-  const [recordResult, billingResult] = await Promise.all([
-    insertNew(requestRecords, dedupedRecords),
-    insertNew(billingRecords, dedupedBilling),
-  ]);
+  // ledger 由本机判定，请求体里带的那个值一律丢掉
+  for (const row of dedupedBilling) row.ledger = null;
 
-  return {
-    inserted: recordResult.inserted + billingResult.inserted,
-    skipped: recordResult.skipped + billingResult.skipped + inBatchDuplicates,
-    invalid,
-  };
+  return db.transaction(async tx => {
+    // 两处插入与扣费共用事务：插行成功、扣费失败会留下不一致的账
+    const recordResult = await insertNew(tx, requestRecords, dedupedRecords);
+    const billingResult = await insertNew(tx, billingRecords, dedupedBilling);
+    await chargeBilling(tx, billingResult.inserted);
+
+    return {
+      inserted: recordResult.inserted.length + billingResult.inserted.length,
+      skipped: recordResult.skipped + billingResult.skipped + inBatchDuplicates,
+      invalid,
+    };
+  });
 }
 
 /* ------------------------------------------------------------------ 序列化 */
