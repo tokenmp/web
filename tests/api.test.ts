@@ -15,6 +15,7 @@
  * 直接调 handler 每个用例都是独立的，失败信息也更干净。
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import fs from "node:fs";
 import { eq } from "drizzle-orm";
 import mysql from "mysql2/promise";
 
@@ -41,6 +42,16 @@ import { GET as summaryGet } from "../src/routes/api/admin/plan-activations/summ
 import { GET as historyGet } from "../src/routes/api/admin/plan-activations/[user_id]/history";
 import { GET as myPlansGet } from "../src/routes/api/user/plans";
 import { POST as subscribePost } from "../src/routes/api/user/plans/[id]/subscribe";
+import { POST as apiKeyLookupPost } from "../src/routes/api/internal/api-key";
+import { POST as recordsIngestPost } from "../src/routes/api/internal/records";
+import { POST as rechargeCallbackPost } from "../src/routes/api/internal/recharge-callback";
+
+// 两把内部密钥写死在这里，不依赖 .env，测试才能反复跑
+process.env.RECORDS_CALLBACK_SECRET = "t-e2e-records-secret";
+process.env.RECHARGE_CALLBACK_SECRET = "t-e2e-recharge-secret";
+
+const recordsSecretHeaders: Record<string, string> = { "x-callback-secret": "t-e2e-records-secret" };
+const rechargeSecretHeaders: Record<string, string> = { "x-callback-secret": "t-e2e-recharge-secret" };
 
 type Handler = (event: unknown) => Promise<Response>;
 
@@ -50,11 +61,12 @@ type CallOptions = {
   body?: unknown;
   token?: string | null;
   params?: Record<string, string>;
+  headers?: Record<string, string>;
 };
 
 /** 按 handler 的约定拼一个 Request：会话走 cookie，参数走 params，体走 JSON */
 async function call(handler: unknown, options: CallOptions) {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...(options.headers ?? {}) };
   if (options.token) headers.cookie = `tokenmp_session=${options.token}`;
   if (options.body !== undefined) headers["content-type"] = "application/json";
 
@@ -468,5 +480,159 @@ describe("套餐与订阅", () => {
     // 坏值静默忽略，不报错
     const bogus = await call(activationsGet, { path: `/api/admin/plan-activations?user_id=${userId}&expire=明天`, token: adminToken });
     expect(bogus.status).toBe(200);
+  });
+});
+
+describe("内部密钥校验端点", () => {
+  /** 建一个用完就删的测试套餐 */
+  async function createPlan(name: string, body: Record<string, unknown>) {
+    const res = await call(plansPost, { method: "POST", path: "/api/admin/plans", token: adminToken, body: { name, ...body } });
+    if (res.status !== 200) throw new Error(`建测试套餐失败：${JSON.stringify(res.body)}`);
+    return res.body.data.id as number;
+  }
+
+  /** 签一把密钥，返回明文与 id */
+  async function issueKey(name: string) {
+    const res = await call(myKeysPost, { method: "POST", path: "/api/user/api_keys", token: userToken, body: { name } });
+    if (res.status !== 200) throw new Error(`签密钥失败：${JSON.stringify(res.body)}`);
+    return { plain: res.body.data.key as string, id: res.body.data.id as number };
+  }
+
+  const lookup = (key: string, headers = recordsSecretHeaders) =>
+    call(apiKeyLookupPost, { method: "POST", path: "/api/internal/api-key", headers, body: { key } });
+
+  test("有效密钥回身份、限流白名单与计价口径：订阅优先，其次绑定", async () => {
+    await resetUser();
+
+    const tablePlan = await createPlan(`t-e2e-内核表-${stamp}`, {
+      mode: "subscription",
+      pricing_mode: "table",
+      quota_kind: "money",
+      quota_amount: 10,
+      quota_period_days: 30,
+      price: 1,
+    });
+    const markupPlan = await createPlan(`t-e2e-内核倍率-${stamp}`, {
+      mode: "subscription",
+      pricing_mode: "markup",
+      markup_multiplier: 1.15,
+      quota_kind: "money",
+      quota_amount: 10,
+      quota_period_days: 30,
+      price: 1,
+    });
+
+    try {
+      const pricePath = `/api/admin/plans/${tablePlan}/prices`;
+      const addPrice = (body: unknown) =>
+        call(pricePost, { method: "POST", path: pricePath, token: adminToken, params: { id: String(tablePlan) }, body });
+      expect((await addPrice({ model: "gpt-4o", input_per_million: 1.5, output_per_million: 6 })).status).toBe(200);
+      expect((await addPrice({ model: "claude-sonnet-4", request_weight: 2 })).status).toBe(200);
+
+      // 先绑按表那档，再订阅倍率那档，然后把绑定改回按表：两条路分叉，验证订阅优先
+      const userPath = `/api/admin/users/${userId}`;
+      const bind = (plan_id: number | null) =>
+        call(adminUserPut, { method: "PUT", path: userPath, token: adminToken, params: { id: String(userId) }, body: { plan_id } });
+      expect((await bind(tablePlan)).status).toBe(200);
+      await call(adjustPost, { method: "POST", path: "/api/admin/balances/adjust", token: adminToken, body: { user_id: userId, amount: 100, reason: "订阅前充值", source: "recharge" } });
+      expect((await call(subscribePost, { method: "POST", path: `/api/user/plans/${markupPlan}/subscribe`, token: userToken, params: { id: String(markupPlan) } })).status).toBe(200);
+      expect((await bind(tablePlan)).status).toBe(200);
+
+      const key = await issueKey("内核校验用");
+      await conn.query("UPDATE api_keys SET model_whitelist = ?, rate_limit_per_min = 60 WHERE id = ?", [JSON.stringify(["gpt-4o"]), key.id]);
+
+      const bySubscription = await lookup(key.plain);
+      expect(bySubscription.status).toBe(200);
+      expect(bySubscription.body.ok).toBe(true);
+      const data = bySubscription.body.data;
+      expect([data.user_id, data.api_key_id]).toEqual([userId, key.id]);
+      expect([data.model_whitelist, data.rate_limit_per_min, data.expires_at]).toEqual([["gpt-4o"], 60, null]);
+      // 有生效订阅就以订阅为准，绑的是另一档也不看
+      expect([data.pricing.plan_id, data.pricing.pricing_mode, data.pricing.markup_multiplier, data.pricing.prices]).toEqual([markupPlan, "markup", 1.15, []]);
+
+      // 订阅取消后落到绑定的按表那档，模型价全给出来
+      await conn.query("UPDATE subscriptions SET status = 'cancelled' WHERE user_id = ?", [userId]);
+      const byBinding = (await lookup(key.plain)).body.data;
+      expect([byBinding.pricing.plan_id, byBinding.pricing.pricing_mode, byBinding.pricing.prices.length]).toEqual([tablePlan, "table", 2]);
+      expect(byBinding.pricing.prices.find((p: any) => p.model === "gpt-4o")).toEqual({
+        model: "gpt-4o",
+        cost_mode: "token",
+        input_per_million: 1.5,
+        output_per_million: 6,
+        cache_read_per_million: 0,
+        cache_write_per_million: 0,
+        per_request: 0,
+        request_weight: 1,
+      });
+
+      // 解绑又没有订阅：计价三项为 null、价表为空，内核据此只推用量不算钱
+      expect((await bind(null)).status).toBe(200);
+      const none = (await lookup(key.plain)).body.data;
+      expect([none.pricing.plan_id, none.pricing.pricing_mode, none.pricing.markup_multiplier, none.pricing.prices]).toEqual([null, null, null, []]);
+    } finally {
+      await conn.query("DELETE FROM subscriptions WHERE plan_id IN (?, ?)", [tablePlan, markupPlan]);
+      await conn.query("DELETE FROM plan_prices WHERE plan_id IN (?, ?)", [tablePlan, markupPlan]);
+      await conn.query("DELETE FROM plans WHERE id IN (?, ?)", [tablePlan, markupPlan]);
+      await resetUser();
+    }
+  });
+
+  test("未知、停用、过期与账号停用分开回 404 / 403 / 410", async () => {
+    await resetUser();
+
+    expect((await lookup(`sk-${"0".repeat(64)}`)).status).toBe(404);
+
+    const disabledKey = await issueKey("停用");
+    await conn.query("UPDATE api_keys SET status = 0 WHERE id = ?", [disabledKey.id]);
+    expect((await lookup(disabledKey.plain)).status).toBe(403);
+
+    const expiredKey = await issueKey("过期");
+    await conn.query("UPDATE api_keys SET expires_at = DATE_SUB(NOW(3), INTERVAL 1 DAY) WHERE id = ?", [expiredKey.id]);
+    expect((await lookup(expiredKey.plain)).status).toBe(410);
+
+    const userDisabledKey = await issueKey("账号停用");
+    await conn.query("UPDATE users SET status = 0 WHERE id = ?", [userId]);
+    expect((await lookup(userDisabledKey.plain)).status).toBe(403);
+    await conn.query("UPDATE users SET status = 1 WHERE id = ?", [userId]);
+
+    // 参数与鉴权
+    const post = (body: unknown, headers = recordsSecretHeaders) =>
+      call(apiKeyLookupPost, { method: "POST", path: "/api/internal/api-key", headers, body });
+    expect((await post({})).status).toBe(400);
+    expect((await post({ key: 42 })).status).toBe(400);
+    expect((await post({ key: "x" }, {})).status).toBe(401);
+    expect((await post({ key: userDisabledKey.plain }, rechargeSecretHeaders)).status).toBe(403);
+
+    await resetUser();
+  });
+
+  test("两把内部密钥不通用", async () => {
+    // 摄入端点只认 RECORDS 那把
+    const ingest = (headers: Record<string, string>) =>
+      call(recordsIngestPost, { method: "POST", path: "/api/internal/records", headers, body: { records: [] } });
+    expect((await ingest(rechargeSecretHeaders)).status).toBe(403);
+    expect((await ingest(recordsSecretHeaders)).status).toBe(200);
+
+    // 充值回调只认 RECHARGE 那把
+    const callback = (headers: Record<string, string>) =>
+      call(rechargeCallbackPost, {
+        method: "POST",
+        path: "/api/internal/recharge-callback",
+        headers,
+        body: { order_no: "rc-does-not-exist", status: "paid" },
+      });
+    expect((await callback(recordsSecretHeaders)).status).toBe(403);
+    // 用对了密钥就过了鉴权，走到「单号不存在」
+    expect((await callback(rechargeSecretHeaders)).status).toBe(404);
+  });
+
+  test("密钥查询只走 sha256，路径上没有 bcrypt", () => {
+    // bcrypt 是登录口令那条路用的；转发链路每次请求都会走这里，必须靠 key_hash 上的
+    // 唯一索引一次命中，不能对候选行逐条 compare。注释里可以提 bcrypt，代码里不行。
+    const source = fs.readFileSync("src/lib/api-key-lookup.ts", "utf-8");
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    expect(code).not.toMatch(/bcrypt/i);
+    expect(code).toContain("hashApiKey");
+    expect(code).toContain("apiKeys.keyHash");
   });
 });

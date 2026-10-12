@@ -19,6 +19,7 @@ import {
   postOk,
   query,
 } from "./api-client";
+import { pickCurrentPlan } from "./current-plan";
 
 export { ApiError };
 
@@ -224,7 +225,8 @@ export function subscribePlan(id: number) {
  * 却看不到，说的就是这一种。
  *
  * 这里把两种情形合起来：有生效订阅以订阅为准，只有绑定就退回绑定的那一档，
- * subscription 为 null 表示「绑了套餐，还没有周期额度」。
+ * subscription 为 null 表示「绑了套餐，还没有周期额度」。判据本体在
+ * src/lib/current-plan.ts，服务端算计价口径时用的是同一份。
  */
 export type PanelPlanState = {
   plan: PanelPlan;
@@ -239,12 +241,18 @@ export function resolvePanelPlan(
   data: PanelPlans,
   boundPlanId: number | null | undefined,
 ): PanelPlanState | null {
+  let bySubscription: PanelPlanState | null = null;
   if (data.current) {
-    const { plan, ...rest } = data.current;
-    return { plan, subscription: rest };
+    const { plan, ...subscription } = data.current;
+    bySubscription = { plan, subscription };
   }
-  if (boundPlanId === null || boundPlanId === undefined) return null;
-  // 绑的那一档已经下架时不在在售列表里，这里取不到，只能照旧不显示
-  const bound = data.plans.find(plan => plan.id === boundPlanId);
-  return bound ? { plan: bound, subscription: null } : null;
+
+  // 绑的那一档已经下架时不在在售列表里（列表只回 status=1），这里取不到，只能照旧不显示
+  const bound =
+    boundPlanId === null || boundPlanId === undefined
+      ? null
+      : data.plans.find(plan => plan.id === boundPlanId) ?? null;
+
+  // 判据与内部密钥校验端点共用，见 src/lib/current-plan.ts
+  return pickCurrentPlan(bySubscription, bound ? { plan: bound, subscription: null } : null);
 }

@@ -51,19 +51,32 @@ if (!databaseUrl) {
   warnings.push("DATABASE_URL 指向本机，确认这是有意的。");
 }
 
-/* ------------------------------------------------------ 充值回调密钥 */
+/* ---------------------------------------------------------- 内部回调密钥 */
 
-// 充值渠道回调接口用它验身份。本地不配也能跑（非生产环境放行），
-// 但生产必须配，否则回调接口会把所有请求都拒掉，充值接不进账。
-const callbackSecret = process.env.RECHARGE_CALLBACK_SECRET;
-if (!callbackSecret) {
-  if (isProduction) {
-    problems.push("RECHARGE_CALLBACK_SECRET 没有设置。生产环境下充值回调会被全部拒绝，先补上。");
-  } else {
-    warnings.push("RECHARGE_CALLBACK_SECRET 没设，充值回调只在非生产环境放行。");
+// 两把密钥各保护一组内部端点（见 src/lib/callback-secret.ts）。本地不配也能跑
+// （非生产环境放行），但生产必须配齐；缺哪一把，哪一组端点就全被拒。
+const callbackSecrets: { name: string; missing: string }[] = [
+  {
+    name: "RECORDS_CALLBACK_SECRET",
+    missing: "转发内核的记录摄入与客户端密钥校验会被全部拒绝",
+  },
+  {
+    name: "RECHARGE_CALLBACK_SECRET",
+    missing: "充值渠道回调会被全部拒绝，充值接不进账",
+  },
+];
+
+for (const { name, missing } of callbackSecrets) {
+  const value = process.env[name];
+  if (!value) {
+    if (isProduction) {
+      problems.push(`${name} 没有设置。生产环境下${missing}，先补上。`);
+    } else {
+      warnings.push(`${name} 没设，它保护的端点只在非生产环境放行。`);
+    }
+  } else if (isProduction && value === "change-me") {
+    problems.push(`NODE_ENV=production 时 ${name} 不能用示例值。`);
   }
-} else if (isProduction && callbackSecret === "change-me") {
-  problems.push("NODE_ENV=production 时 RECHARGE_CALLBACK_SECRET 不能用示例值。");
 }
 
 /* --------------------------------------------------------------- 连通性 */

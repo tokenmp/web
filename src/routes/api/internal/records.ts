@@ -1,18 +1,19 @@
 import type { APIEvent } from "@solidjs/start/server";
 
+import { checkRecordsSecret } from "~/lib/callback-secret";
 import { errorJson, json } from "~/lib/http";
-import { checkCallbackSecret } from "~/lib/recharge";
 import { ingestRecords } from "~/lib/records";
 
 /**
- * 转发内核的日志摄入端点。不走会话，用 x-callback-secret 共享密钥。
+ * 转发内核的日志摄入端点。不走会话，用 x-callback-secret 共享密钥
+ *（RECORDS_CALLBACK_SECRET，与客户端密钥校验端点同一把）。
  *
  * body：{ records?: RequestRecord[], billing?: BillingRecord[] }
  * 一次批量提交；request_id 是幂等键，同一批重复提交只会记一遍，
  * 返回 { ok: true, inserted, skipped, invalid }。
  */
 export async function POST({ request }: APIEvent) {
-  const denied = checkCallbackSecret(request, errorJson);
+  const denied = checkRecordsSecret(request, errorJson);
   if (denied) return denied;
 
   let body: unknown = null;

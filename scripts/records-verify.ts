@@ -9,11 +9,13 @@
  */
 import mysql, { type ResultSetHeader } from "mysql2/promise";
 
-process.env.RECHARGE_CALLBACK_SECRET = `verify-secret-${Date.now()}`;
+process.env.RECORDS_CALLBACK_SECRET = `verify-records-${Date.now()}`;
+process.env.RECHARGE_CALLBACK_SECRET = `verify-recharge-${Date.now()}`;
 
 import { signSession } from "../src/lib/auth";
 
-const SECRET = process.env.RECHARGE_CALLBACK_SECRET;
+const RECORDS_SECRET = process.env.RECORDS_CALLBACK_SECRET;
+const RECHARGE_SECRET = process.env.RECHARGE_CALLBACK_SECRET;
 const conn = await mysql.createConnection(
   process.env.DATABASE_URL ?? "mysql://tokenmp:tokenmp-dev@127.0.0.1:3307/tokenmp",
 );
@@ -217,7 +219,8 @@ const { GET: adminSummaryGet } = await import("../src/routes/api/admin/dashboard
 const { GET: adminUsageGet } = await import("../src/routes/api/admin/dashboard/usage");
 const { GET: adminDashboardGet } = await import("../src/routes/api/admin/dashboard");
 
-const secretHeaders = { "x-callback-secret": SECRET! };
+const recordsHeaders = { "x-callback-secret": RECORDS_SECRET! };
+const rechargeHeaders = { "x-callback-secret": RECHARGE_SECRET! };
 
 try {
   /* -------------------------------------------------------- #29 充值与回调 */
@@ -284,7 +287,7 @@ try {
   const unknownOrder = await call(callbackPost, {
     method: "POST",
     path: "/api/internal/recharge-callback",
-    headers: secretHeaders,
+    headers: rechargeHeaders,
     body: { order_no: "rc-does-not-exist", status: "paid" },
   });
   check("单号不存在回 404", unknownOrder.status === 404, `status=${unknownOrder.status}`);
@@ -292,7 +295,7 @@ try {
   const paid1 = await call(callbackPost, {
     method: "POST",
     path: "/api/internal/recharge-callback",
-    headers: secretHeaders,
+    headers: rechargeHeaders,
     body: { order_no: orderNo1, external_no: "ext-1", status: "paid", amount: 100 },
   });
   check("首次 paid 回调回 200 且非重复", paid1.status === 200 && paid1.body.already === false, JSON.stringify(paid1.body));
@@ -319,7 +322,7 @@ try {
   const repeat = await call(callbackPost, {
     method: "POST",
     path: "/api/internal/recharge-callback",
-    headers: secretHeaders,
+    headers: rechargeHeaders,
     body: { order_no: orderNo1, external_no: "ext-1", status: "paid", amount: 100 },
   });
   check("重复回调回 {ok:true, already:true}", repeat.status === 200 && repeat.body.already === true, JSON.stringify(repeat.body));
@@ -348,7 +351,7 @@ try {
   const failed = await call(callbackPost, {
     method: "POST",
     path: "/api/internal/recharge-callback",
-    headers: secretHeaders,
+    headers: rechargeHeaders,
     body: { order_no: orderNo2, status: "failed" },
   });
   const [order2Row] = (await conn.query("SELECT status, paid_at, credit_transaction_id FROM recharge_orders WHERE order_no = ?", [
@@ -367,7 +370,7 @@ try {
   const paidAfterFailed = await call(callbackPost, {
     method: "POST",
     path: "/api/internal/recharge-callback",
-    headers: secretHeaders,
+    headers: rechargeHeaders,
     body: { order_no: orderNo2, status: "paid" },
   });
   const [balanceAfterLatePay] = (await conn.query("SELECT balance FROM users WHERE id = ?", [userId])) as [
@@ -394,7 +397,7 @@ try {
   const badShape = await call(ingestPost, {
     method: "POST",
     path: "/api/internal/records",
-    headers: secretHeaders,
+    headers: recordsHeaders,
     body: { records: {} },
   });
   check("records 不是数组回 400", badShape.status === 400, `status=${badShape.status}`);
@@ -402,7 +405,7 @@ try {
   const first = await call(ingestPost, {
     method: "POST",
     path: "/api/internal/records",
-    headers: secretHeaders,
+    headers: recordsHeaders,
     body: { records: recordPayload, billing: billingPayload },
   });
   check(
@@ -414,7 +417,7 @@ try {
   const second = await call(ingestPost, {
     method: "POST",
     path: "/api/internal/records",
-    headers: secretHeaders,
+    headers: recordsHeaders,
     body: { records: recordPayload, billing: billingPayload },
   });
   check(
@@ -426,7 +429,7 @@ try {
   const third = await call(ingestPost, {
     method: "POST",
     path: "/api/internal/records",
-    headers: secretHeaders,
+    headers: recordsHeaders,
     body: {
       records: [recordPayload[0], { request_id: `vfy-req-${stamp}-extra`, user_id: userId, model: MODELS[0], status: "success" }],
     },
