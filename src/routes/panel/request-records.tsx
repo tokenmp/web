@@ -2,7 +2,6 @@ import { Title } from "@solidjs/meta";
 import Search from "lucide-solid/icons/search";
 import { createEffect, createSignal, on, Show } from "solid-js";
 
-import { PageHeader } from "~/components/layout/page-header";
 import { CopyableId } from "~/components/panel/copyable-id";
 import { DetailRow, MetricGrid } from "~/components/panel/detail-row";
 import { ResponsiveTable } from "~/components/panel/responsive-table";
@@ -92,7 +91,6 @@ export default function PanelRequestRecords() {
     <>
       <Title>请求日志 | TokenMP 用户面板</Title>
 
-      <PageHeader description="本人调用历史：模型、指标与结果" />
 
       <Card class="overflow-hidden">
         <div class="flex flex-wrap items-center gap-2 border-b p-4">

@@ -240,7 +240,7 @@ export default function DashboardPlans() {
     <>
       <Title>套餐 | TokenMP 销售控制台</Title>
 
-      <PageHeader description="在售套餐、模型价与订阅情况。停用是软删，会一并删掉该套餐的模型价">
+      <PageHeader>
         <Switch checked={includeDeleted()} onChange={setIncludeDeleted} label="含已停用" />
         <Button onClick={() => openForm(null)}>
           <Plus class="size-4" aria-hidden="true" />
@@ -297,7 +297,7 @@ export default function DashboardPlans() {
           <div>
             <h2 class="font-semibold tracking-tight">订阅与激活</h2>
             <p class="mt-0.5 text-sm text-muted-foreground">
-              按用户聚合，点「续费历史」看单个人的订阅流水
+              按用户聚合
             </p>
           </div>
 
@@ -459,7 +459,7 @@ export default function DashboardPlans() {
           if (!open) setPendingDisable(null);
         }}
         title="停用这个套餐？"
-        description="停用是软删：套餐从默认列表里消失，名字仍被占用（再建同名会 409），名下的模型价会被直接删掉。已经订阅的用户不受影响。停用后可以在同一张卡上「恢复」。"
+        description="停用是软删：套餐从默认列表里消失，名字仍被占用（再建同名会 409），名下的模型价会被直接删掉。已经订阅的用户不受影响。"
         footer={
           <>
             <Button variant="outline" onClick={() => setPendingDisable(null)}>

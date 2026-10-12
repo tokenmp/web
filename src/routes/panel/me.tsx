@@ -6,11 +6,10 @@ import LogOut from "lucide-solid/icons/log-out";
 import { createSignal, For, Show } from "solid-js";
 
 import { VersionLabel } from "~/components/layout/app-shell";
-import { PageHeader } from "~/components/layout/page-header";
 import { Section } from "~/components/panel/section";
 import { ThemeToggle } from "~/components/layout/app-shell";
 import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Button, buttonVariants } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { DecimalSplit } from "~/components/ui/decimal-split";
 import { Dialog } from "~/components/ui/dialog";
@@ -116,7 +115,6 @@ function PanelMePage() {
     <>
       <Title>个人中心 | TokenMP 用户面板</Title>
 
-      <PageHeader description="账户信息、额度与偏好" />
 
       <div class="grid gap-4 lg:grid-cols-2">
         <Card class="p-5">
@@ -241,9 +239,15 @@ function PanelMePage() {
             <Show
               when={current()!.subscription}
               fallback={
-                <p class="mt-3 text-sm text-muted-foreground">
-                  后台已经给这个账号绑定了套餐，还没有开通周期。到套餐页订阅一档，就有周期额度可用。
-                </p>
+                <>
+                  <p class="mt-3 text-sm text-muted-foreground">还没有周期额度</p>
+                  <A
+                    href="/panel/plans"
+                    class={`${buttonVariants({ variant: "outline" })} mt-3`}
+                  >
+                    去订阅套餐
+                  </A>
+                </>
               }
             >
               <div class="mt-3 flex items-center justify-between text-sm">
@@ -313,7 +317,7 @@ function PanelMePage() {
         </Card>
       </div>
 
-      <Section title="服务入口" caption="明细、分享这些独立页从这里进" class="mt-5">
+      <Section title="服务入口" class="mt-5">
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <For each={SERVICE_LINKS}>
             {link => (
@@ -442,7 +446,6 @@ function PanelMePage() {
       </Dialog>
 
       <div class="mt-5 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-        <p>积分口径 1 元 = 10000 积分。余额与信用按元存储，这里换算成积分显示。</p>
         <VersionLabel />
       </div>
     </>

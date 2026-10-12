@@ -142,7 +142,7 @@ export default function PanelKeys() {
     <>
       <Title>我的密钥 | TokenMP 用户面板</Title>
 
-      <PageHeader description="管理用于调用模型的 API 密钥">
+      <PageHeader>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus class="size-4" aria-hidden="true" />
           新建密钥

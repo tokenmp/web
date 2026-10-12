@@ -4,7 +4,7 @@ import ChevronRight from "lucide-solid/icons/chevron-right";
 import Download from "lucide-solid/icons/download";
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 
-import { PageHeader, StatRow } from "~/components/layout/page-header";
+import { StatRow } from "~/components/layout/page-header";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
@@ -104,7 +104,6 @@ export default function DashboardBilling() {
     <>
       <Title>计费 | TokenMP 销售控制台</Title>
 
-      <PageHeader description="计费流水：成本、收入与结算状态" />
 
       <StatRow items={stats()} />
 

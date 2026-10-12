@@ -2,7 +2,6 @@ import { Title } from "@solidjs/meta";
 import Search from "lucide-solid/icons/search";
 import { createEffect, createSignal, on, Show } from "solid-js";
 
-import { PageHeader } from "~/components/layout/page-header";
 import { CopyableId } from "~/components/panel/copyable-id";
 import { DetailRow, MetricGrid } from "~/components/panel/detail-row";
 import { ResponsiveTable } from "~/components/panel/responsive-table";
@@ -109,7 +108,6 @@ export default function PanelBilling() {
     <>
       <Title>账单流水 | TokenMP 用户面板</Title>
 
-      <PageHeader description="按状态、扣费与模型筛选调用记录与计费明细" />
 
       <Card class="overflow-hidden">
         <div class="flex flex-wrap items-center gap-2 border-b p-4">
@@ -329,9 +327,6 @@ function BillingDetail(props: { record: BillingRecord }) {
         </dl>
       </Section>
 
-      <p class="text-xs text-muted-foreground">
-        单位说明：金额按 1 元 = 10000 积分换算显示，成本是平台付给上游的价，实付是你实际扣掉的积分。
-      </p>
     </div>
   );
 }

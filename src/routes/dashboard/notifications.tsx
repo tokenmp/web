@@ -135,7 +135,7 @@ export default function DashboardNotifications() {
     <>
       <Title>通知投递 | TokenMP 销售控制台</Title>
 
-      <PageHeader description="给单个或一批用户发站内通知，并查看投递记录">
+      <PageHeader>
         <Button onClick={() => setFormOpen(true)}>
           <Plus class="size-4" aria-hidden="true" />
           发通知

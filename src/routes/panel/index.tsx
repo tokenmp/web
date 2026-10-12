@@ -1,5 +1,5 @@
 import { Title } from "@solidjs/meta";
-import { A, createAsync } from "@solidjs/router";
+import { A } from "@solidjs/router";
 import ChevronRight from "lucide-solid/icons/chevron-right";
 import { createSignal, For, Show } from "solid-js";
 
@@ -7,25 +7,22 @@ import { Delta } from "~/components/panel/delta";
 import { ResponsiveTable } from "~/components/panel/responsive-table";
 import { UsageChart } from "~/components/panel/usage-chart";
 import { Badge } from "~/components/ui/badge";
+import { buttonVariants } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { DecimalSplit } from "~/components/ui/decimal-split";
 import { Segmented } from "~/components/ui/segmented";
-import {
-  availablePoints,
-  panelCredits,
-  panelMe,
-  usageSeries,
-  type BalanceTransaction,
-} from "~/lib/panel-data";
-import { txSourceMeta } from "~/lib/panel-labels";
+import { detailText, txSourceMeta } from "~/lib/panel-labels";
 import { createClientResource } from "~/lib/resource";
-import { getCurrentUser } from "~/lib/session";
+import { getUsage, type UsageSeriesItem } from "~/lib/usage";
 import {
+  emptyCredits,
   emptyPlans,
+  fetchCredits,
   fetchMe,
   fetchPlans,
   resolvePanelPlan,
   type PanelMe,
+  type PanelTransaction,
 } from "~/lib/user-panel";
 import { cn } from "~/lib/utils";
 import {
@@ -48,22 +45,26 @@ const METRIC_OPTIONS: { value: "tokens" | "revenue"; label: string }[] = [
  * 一屏回答三个问题：还剩多少、最近用得怎么样、钱的去向。
  * 所以顺序是 KPI 指条 → 用量趋势 → 当前套餐还剩多少 → 最近流水。
  *
- * KPI、用量图、最近流水还读 panel-data 的示例数据（对应接口在本机未实现，
- * 或只有网关回写后才会有数据）。「当前套餐」那一块已经接了接口，
- * 界面上的套餐名与额度跟后台和订阅对得上。
+ * 全部读本机接口：额度与流水是 /user/credits，用量是 /user/usage，套餐是 /user/plans。
+ * 转发内核还没回写记录之前，用量与流水都是空的，这里显示「—」而不是编个数。
  */
 export default function PanelOverview() {
-  const user = createAsync(() => getCurrentUser());
   // 后台绑的套餐（users.plan_id）与自助订阅（subscriptions 行）是两回事，两个都要拉
   const plans = createClientResource(fetchPlans, emptyPlans);
   const me = createClientResource<PanelMe | null>(fetchMe, null);
+  const credits = createClientResource(() => fetchCredits({ page: 1, size: 5 }), emptyCredits);
+  const usage = createClientResource<UsageSeriesItem[]>(() => getUsage(7), []);
   const [metric, setMetric] = createSignal<"tokens" | "revenue">("tokens");
 
   const current = () => resolvePanelPlan(plans.data(), me.data()?.plan_id);
-  const today = () => usageSeries[usageSeries.length - 1];
-  const totalTokens = () => usageSeries.reduce((sum, day) => sum + day.tokens, 0);
-  const totalRevenue = () => usageSeries.reduce((sum, day) => sum + day.revenue, 0);
-  const recent = () => panelCredits.transactions.slice(0, 5);
+  /** 序列按天升序，最后一天就是今天；一条都没有时为 null */
+  const today = () => usage.data().at(-1) ?? null;
+  const totalTokens = () => usage.data().reduce((sum, day) => sum + day.tokens, 0);
+  const totalRevenue = () => usage.data().reduce((sum, day) => sum + day.revenue, 0);
+  const available = () => {
+    const value = me.data();
+    return value ? value.balance + value.credit_available : null;
+  };
   const quotaRate = () => {
     const value = current()?.subscription;
     if (!value || value.quota_limit <= 0) return 0;
@@ -73,25 +74,30 @@ export default function PanelOverview() {
   const kpis = () => [
     {
       label: "可用积分",
-      value: <DecimalSplit text={formatPoints(availablePoints())} />,
-      hint: `余额 ${formatPoints(panelMe.balance)} · 信用 ${formatPoints(panelMe.credit_available)}`,
+      value: available() === null ? "—" : <DecimalSplit text={formatPoints(available()!)} />,
+      hint:
+        me.data() === null
+          ? undefined
+          : `余额 ${formatPoints(me.data()!.balance)} · 信用 ${formatPoints(me.data()!.credit_available)}`,
     },
     {
       label: "今日 Token",
-      value: formatTokens(today().tokens),
-      hint: `${formatNumber(today().tokens)} tok`,
+      value: today() ? formatTokens(today()!.tokens) : "—",
     },
     {
       label: "近 7 日 Token",
-      value: formatTokens(totalTokens()),
-      hint: `${formatNumber(totalTokens())} tok`,
+      value: usage.data().length === 0 ? "—" : formatTokens(totalTokens()),
     },
     {
       label: "今日消耗",
-      value: <DecimalSplit text={formatPoints(today().revenue)} />,
-      hint: `${formatPoints(today().revenue)} 积分`,
+      value:
+        today() === null ? "—" : <DecimalSplit text={formatPoints(today()!.revenue)} />,
     },
-    { label: "今日请求", value: formatNumber(today().requests), hint: "含失败与重试" },
+    {
+      label: "今日请求",
+      value: today() ? formatNumber(today()!.requests) : "—",
+      hint: "含失败与重试",
+    },
   ];
 
   return (
@@ -123,8 +129,14 @@ export default function PanelOverview() {
             <div>
               <h2 class="text-sm font-semibold">近 7 日用量</h2>
               <p class="mt-1 text-xs text-muted-foreground">
-                合计 {formatNumber(totalTokens())} tok · 消耗{" "}
-                <DecimalSplit text={formatPoints(totalRevenue())} /> 积分
+                {usage.loading() || usage.data().length === 0 ? (
+                  "—"
+                ) : (
+                  <>
+                    合计 {formatNumber(totalTokens())} tok · 消耗{" "}
+                    <DecimalSplit text={formatPoints(totalRevenue())} /> 积分
+                  </>
+                )}
               </p>
             </div>
             <Segmented
@@ -135,7 +147,7 @@ export default function PanelOverview() {
             />
           </div>
           <div class="p-4">
-            <UsageChart series={usageSeries} metric={metric()} />
+            <UsageChart series={usage.data()} metric={metric()} />
           </div>
         </Card>
 
@@ -167,11 +179,15 @@ export default function PanelOverview() {
             <Show
               when={current()?.subscription}
               fallback={
-                <p class="text-sm text-muted-foreground">
-                  {current()
-                    ? "这个套餐还没有开通周期，到套餐页订阅一档就有周期额度。"
-                    : "到套餐页挑一档订阅，或选「按量付费」只按实际用量从余额扣费。"}
-                </p>
+                <>
+                  <p class="text-sm text-muted-foreground">还没有周期额度</p>
+                  <A
+                    href="/panel/plans"
+                    class={cn(buttonVariants({ variant: "outline" }), "mt-3")}
+                  >
+                    去订阅套餐
+                  </A>
+                </>
               }
             >
               <div class="flex items-center justify-between text-sm">
@@ -227,51 +243,53 @@ export default function PanelOverview() {
           </div>
 
           <ResponsiveTable
-            items={recent()}
-            rowKey={(row: BalanceTransaction) => row.id}
+            items={credits.data().transactions}
+            rowKey={(row: PanelTransaction) => row.id}
             columns={[
               {
                 header: "来源",
-                cell: row => (
+                cell: (row: PanelTransaction) => (
                   <Badge variant={txSourceMeta(row.source).variant}>
                     {txSourceMeta(row.source).label}
                   </Badge>
                 ),
               },
-              { header: "说明", cell: row => row.detail ?? row.model ?? "—" },
-              { header: "变动", align: "right", cell: row => <Delta value={row.delta} /> },
+              {
+                header: "说明",
+                cell: (row: PanelTransaction) => detailText(row.detail) ?? row.model ?? "—",
+              },
+              {
+                header: "变动",
+                align: "right",
+                cell: (row: PanelTransaction) => <Delta value={row.delta} />,
+              },
               {
                 header: "结余",
                 align: "right",
-                cell: row => <DecimalSplit text={formatPoints(row.balance_after)} />,
+                cell: (row: PanelTransaction) => (
+                  <DecimalSplit text={formatPoints(row.balance_after)} />
+                ),
               },
               {
                 header: "时间",
-                cell: row => (
+                cell: (row: PanelTransaction) => (
                   <span title={formatDateTime(row.created_at)}>
                     {formatRelativeTime(row.created_at)}
                   </span>
                 ),
               },
             ]}
-            cardTitle={row => row.model ?? txSourceMeta(row.source).label}
-            cardSubtitle={row => (
+            cardTitle={(row: PanelTransaction) => row.model ?? txSourceMeta(row.source).label}
+            cardSubtitle={(row: PanelTransaction) => (
               <>
                 {row.total_tokens ? `${formatNumber(row.total_tokens)} tok · ` : ""}
                 {formatRelativeTime(row.created_at)}
               </>
             )}
-            cardRight={row => <Delta value={row.delta} />}
-            empty="暂无流水"
-            emptyDescription="调用模型之后，这里会按时间列出每一笔扣款"
+            cardRight={(row: PanelTransaction) => <Delta value={row.delta} />}
+            empty={credits.loading() ? "加载中…" : "暂无流水"}
           />
         </section>
-
-        <p class="text-xs text-muted-foreground">
-          账户 {user()?.name ?? "—"}
-          {user()?.email ? ` · ${user()!.email}` : ""}
-          <span> · 积分口径 1 元 = 10000 积分</span>
-        </p>
       </div>
     </>
   );

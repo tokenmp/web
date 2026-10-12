@@ -147,7 +147,7 @@ function AdminRecharge() {
     <>
       <Title>充值 | TokenMP 销售控制台</Title>
 
-      <PageHeader description="这一页是充值单：谁下了单、渠道回了没、钱有没有进账本。计费页看的是调用扣费，两者不是一回事。">
+      <PageHeader>
         <Button variant="outline" onClick={() => void orders.reload()}>
           刷新
         </Button>

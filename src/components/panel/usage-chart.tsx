@@ -3,8 +3,8 @@ import { createMemo, createSignal, For, Show } from "solid-js";
 import { DecimalSplit } from "~/components/ui/decimal-split";
 import { EmptyState } from "~/components/ui/empty-state";
 import { modelColor } from "~/lib/model-colors";
-import { usageModels, type UsageDay } from "~/lib/panel-data";
-import { cn, formatNumber, formatPoints, formatTokens } from "~/lib/utils";
+import type { UsageSeriesItem } from "~/lib/usage";
+import { formatNumber, formatPoints, formatTokens } from "~/lib/utils";
 
 const WIDTH = 640;
 const HEIGHT = 200;
@@ -19,11 +19,27 @@ const GAP = 8;
  * 当天的分模型明细。明细是 HTML 而不是 SVG 文本 —— 深色模式下跟着令牌走，
  * 也不用自己算位置。
  */
-export function UsageChart(props: { series: UsageDay[]; metric: "tokens" | "revenue" }) {
+/**
+ * 序列里出现过的模型，顺序决定堆叠次序与配色下标。
+ *
+ * 按首次出现的先后收，不按用量排序：换指标或者新的一天进来时，
+ * 已出现过的模型不会换颜色。
+ */
+function usageModels(series: UsageSeriesItem[]) {
+  const seen: string[] = [];
+  for (const day of series) {
+    for (const slice of day.models ?? []) {
+      if (!seen.includes(slice.model)) seen.push(slice.model);
+    }
+  }
+  return seen;
+}
+
+export function UsageChart(props: { series: UsageSeriesItem[]; metric: "tokens" | "revenue" }) {
   const [hovered, setHovered] = createSignal<number | null>(null);
 
   const models = createMemo(() => usageModels(props.series));
-  const valueOf = (day: UsageDay, model: string) =>
+  const valueOf = (day: UsageSeriesItem, model: string) =>
     props.metric === "tokens"
       ? (day.models?.find(slice => slice.model === model)?.tokens ?? 0)
       : (day.models?.find(slice => slice.model === model)?.revenue ?? 0);
@@ -54,7 +70,7 @@ export function UsageChart(props: { series: UsageDay[]; metric: "tokens" | "reve
   return (
     <Show
       when={props.series.length > 0}
-      fallback={<EmptyState title="暂无用量" description="近 7 日还没有产生调用" />}
+      fallback={<EmptyState title="暂无用量" description="这段时间还没有产生调用" />}
     >
       <div class="relative">
         <svg
@@ -179,8 +195,15 @@ export function UsageChart(props: { series: UsageDay[]; metric: "tokens" | "reve
       </div>
 
       <p class="mt-3 text-xs text-muted-foreground">
-        峰值 {formatTokens(peak())} tok
-        <span class={cn("hidden", "md:inline")}> · 鼠标停在柱子上看当天的分模型明细</span>
+        峰值
+        {props.metric === "tokens" ? (
+          <> {formatTokens(peak())} tok</>
+        ) : (
+          <>
+            {" "}
+            <DecimalSplit text={formatPoints(peak())} /> 积分
+          </>
+        )}
       </p>
     </Show>
   );

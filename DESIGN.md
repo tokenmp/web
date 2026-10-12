@@ -78,23 +78,26 @@
 | `/dashboard/billing` | 计费流水 | 已实现，接了接口 |
 | `/dashboard/recharge` | 充值单，可筛出未到账与失败的 | 已实现，接了接口 |
 | `/dashboard/notifications` | 通知投递与发送 | 已实现，接了接口 |
-| `/dashboard/channels` | 渠道 | 已实现，等转发侧（接口是 remote） |
-| `/dashboard/channel-groups` | 渠道分组 | 已实现，等转发侧（接口是 remote） |
-| `/dashboard/channel-applications` | 渠道申请 | 已实现，等转发侧（接口是 remote） |
+| `/dashboard/channels` | 渠道 | 空页，接口是 remote，等转发侧 |
+| `/dashboard/channel-groups` | 渠道分组 | 空页，接口是 remote，等转发侧 |
+| `/dashboard/channel-applications` | 渠道申请 | 空页，接口是 remote，等转发侧 |
 | `/dashboard/announcements` | 公告管理，草稿到发布的流程 | 已实现，接了接口 |
 | `/panel` | 用户面板概览，五格指标、近 7 日用量图、当前套餐、最近流水 | 已实现，接了接口 |
 | `/panel/keys` | 我的密钥，新建后明文只弹一次 | 已实现，接了接口 |
-| `/panel/models` | 模型目录与降级链 | 已实现，等转发侧（接口是 remote） |
+| `/panel/models` | 模型目录 | 空页，接口是 remote，等转发侧 |
 | `/panel/request-records` | 请求日志，带详情抽屉 | 已实现，等转发侧回写数据 |
 | `/panel/billing` | 账单流水 | 已实现，等转发侧回写数据 |
 | `/panel/credits` | 余额明细 | 已实现，接了接口 |
 | `/panel/plans` | 套餐与订阅、取消订阅 | 已实现，接了接口 |
-| `/panel/accounts` | 分享的渠道账号 | 已实现，等转发侧（接口是 remote） |
-| `/panel/channels` | 我的渠道与申请 | 已实现，等转发侧（接口是 remote） |
+| `/panel/accounts` | 分享的渠道账号 | 空页，接口是 remote，等转发侧 |
+| `/panel/channels` | 我的渠道与申请 | 空页，接口是 remote，等转发侧 |
 | `/panel/me` | 个人中心，额度、预算、改密码 | 已实现，接了接口 |
 
 还差最后一层的是「等转发侧回写数据」那几页：表、摄入接口、查询与页面都已就绪，
 但 `/api/internal/records` 没有数据源，网关接上之前列表是空的。
+
+上面标「空页」的六页原来渲染的是写死的样例（控制台三个渠道页各自内联，用户面板三页引自
+`panel-data.ts`），现在只留页面标题，等接口落地再接 —— 假数据比空页更容易让人误判。
 
 ## 组件清单
 
@@ -163,7 +166,6 @@
 | [src/store/theme.ts](src/store/theme.ts) | 外观偏好，值为 `light`、`dark`、`system`，存 `localStorage` 的 `tokenmp.theme`，落到 `<html class="dark">` |
 | [src/lib/utils.ts](src/lib/utils.ts) | `cn()` 合并类名，`formatNumber()`、`formatCurrency()` 与几个时间格式化 |
 | [src/lib/system.ts](src/lib/system.ts) | 版本、公告、通知的客户端数据层，走 `/api` 下的接口 |
-| [src/lib/panel-data.ts](src/lib/panel-data.ts) | 用户面板的示例数据与类型，字段名照 openapi.yaml 的 UserPanel 一组 |
 | [src/lib/panel-labels.ts](src/lib/panel-labels.ts) | 面板里各种状态值到徽标的映射 |
 | [src/lib/panel-nav.tsx](src/lib/panel-nav.tsx) | 面板的分组导航与手机底栏 |
 | [src/lib/resource.ts](src/lib/resource.ts) | `createClientResource()`：只在客户端取数，避开 SSR 下的相对路径 `fetch` |

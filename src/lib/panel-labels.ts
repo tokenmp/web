@@ -12,7 +12,9 @@ export type BadgeVariant = "default" | "secondary" | "outline" | "success" | "wa
 
 export type BadgeMeta = { label: string; variant: BadgeVariant };
 
-/** 余额流水的来源 */
+/**
+ * 余额流水的来源
+ */
 export function txSourceMeta(source: string): BadgeMeta {
   switch (source) {
     case "recharge":
@@ -31,6 +33,21 @@ export function txSourceMeta(source: string): BadgeMeta {
 }
 
 /** 扣的是订阅额度还是余额 */
+/**
+ * 流水里的 detail 在后端是 JSON：本机通常是 null，网关回写时可能是字符串或对象，
+ * 这里取一个能当摘要看的字符串，取不到返回 null。
+ */
+export function detailText(detail: unknown): string | null {
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object") {
+    const value = detail as Record<string, unknown>;
+    for (const key of ["reason", "message", "text", "detail"]) {
+      if (typeof value[key] === "string" && value[key]) return value[key] as string;
+    }
+  }
+  return null;
+}
+
 export function ledgerMeta(ledger: string): BadgeMeta {
   if (ledger === "quota") return { label: "额度", variant: "outline" };
   if (ledger === "balance") return { label: "余额", variant: "secondary" };
