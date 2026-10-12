@@ -143,7 +143,7 @@
 
 | 组件 | 文件 | 说明 |
 | --- | --- | --- |
-| ResponsiveTable | [responsive-table.tsx](src/components/panel/responsive-table.tsx) | 同一份数据桌面渲染表格、手机渲染卡片流，用 `md:` 切换，不靠 JS 判断断点 |
+| ResponsiveTable | [responsive-table.tsx](src/components/panel/responsive-table.tsx) | 同一份数据桌面渲染表格、手机渲染一份行列表（用 `divide-y` 连成一张列表，每行不再单独画描边与圆角），用 `md:` 切换，不靠 JS 判断断点 |
 | UsageChart | [usage-chart.tsx](src/components/panel/usage-chart.tsx) | 近 7 日按模型堆叠的柱状图，手写 SVG，悬浮出当天明细 |
 | Delta | [delta.tsx](src/components/panel/delta.tsx) | 流水变动，入账成功色、扣款危险色，带符号 |
 | DetailRow / MetricGrid | [detail-row.tsx](src/components/panel/detail-row.tsx) | 详情抽屉里的「标签 - 值」行与指标格 |

@@ -11,7 +11,7 @@ export type PanelColumn<T> = {
 };
 
 /**
- * 列表的两种呈现：桌面端表格，手机端卡片流。
+ * 列表的两种呈现：桌面端表格，手机端行列表。
  *
  * 手机上的横向滚动表格很难读，所以同一份数据渲染两遍，用 `md:` 切换。
  * 两边都由 CSS 控制，不靠 JS 判断断点 —— 服务端渲染出来的是同一份 DOM，
@@ -87,14 +87,17 @@ export function ResponsiveTable<T>(props: {
         </Table>
       </div>
 
-      <div class="space-y-3 md:hidden">
+      {/* 手机上的行不再各自画一圈描边与圆角。原来每一行都是 rounded-lg border bg-card，
+          套在页面的卡片里面，四行就是四个框套在框里。改成用分隔线连成一张列表，
+          跟桌面端表格的行分隔一致；行本身不要底色，绡页面卡片的底。 */}
+      <div class="divide-y divide-border md:hidden">
         <Show when={props.items.length === 0}>
           <EmptyState title={props.empty} description={props.emptyDescription} />
         </Show>
 
         <For each={props.items}>
           {item => (
-            <div class="rounded-lg border bg-card">
+            <div>
               <div
                 class="flex items-center gap-3 px-4 py-3"
                 onClick={() => props.onRowClick?.(item)}
