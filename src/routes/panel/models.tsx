@@ -1,14 +1,21 @@
 import { Title } from "@solidjs/meta";
 
+import { EmptyState } from "~/components/ui/empty-state";
+
 /**
  * 模型目录。
  *
  * 数据来自 GET /user/catalog，本机还没实现（openapi 里标的是 remote），
- * 所以这里先空着。原来这一页渲染的是写死的模型与渠道样例，
+ * 所以这一页只有空态。原来渲染的是写死的模型与渠道样例，
  * 看着像真数据，实际点不了也调不通，已经去掉。
  */
 function PanelModels() {
-  return <Title>模型目录 | TokenMP 用户面板</Title>;
+  return (
+    <>
+      <Title>模型目录 | TokenMP 用户面板</Title>
+      <EmptyState description="接口接上后这里会列出可用模型与上游" />
+    </>
+  );
 }
 
 // 默认导出写在末尾：`export default function X()` 会被 oxc-parser 误判成类型导出，

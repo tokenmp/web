@@ -7,6 +7,7 @@ import { Delta } from "~/components/panel/delta";
 import { ResponsiveTable } from "~/components/panel/responsive-table";
 import { UsageChart } from "~/components/panel/usage-chart";
 import { Badge } from "~/components/ui/badge";
+import { buttonVariants } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { DecimalSplit } from "~/components/ui/decimal-split";
 import { Segmented } from "~/components/ui/segmented";
@@ -177,7 +178,17 @@ export default function PanelOverview() {
           <div class="p-4">
             <Show
               when={current()?.subscription}
-              fallback={null}
+              fallback={
+                <>
+                  <p class="text-sm text-muted-foreground">还没有周期额度</p>
+                  <A
+                    href="/panel/plans"
+                    class={cn(buttonVariants({ variant: "outline" }), "mt-3")}
+                  >
+                    去订阅套餐
+                  </A>
+                </>
+              }
             >
               <div class="flex items-center justify-between text-sm">
                 <span class="text-muted-foreground">额度已用</span>

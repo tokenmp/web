@@ -9,7 +9,7 @@ import { VersionLabel } from "~/components/layout/app-shell";
 import { Section } from "~/components/panel/section";
 import { ThemeToggle } from "~/components/layout/app-shell";
 import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Button, buttonVariants } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { DecimalSplit } from "~/components/ui/decimal-split";
 import { Dialog } from "~/components/ui/dialog";
@@ -238,7 +238,17 @@ function PanelMePage() {
           >
             <Show
               when={current()!.subscription}
-              fallback={null}
+              fallback={
+                <>
+                  <p class="mt-3 text-sm text-muted-foreground">还没有周期额度</p>
+                  <A
+                    href="/panel/plans"
+                    class={`${buttonVariants({ variant: "outline" })} mt-3`}
+                  >
+                    去订阅套餐
+                  </A>
+                </>
+              }
             >
               <div class="mt-3 flex items-center justify-between text-sm">
                 <span class="text-muted-foreground">已用</span>

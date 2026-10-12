@@ -238,95 +238,97 @@ export default function PanelPlans() {
         </div>
       </Card>
 
-      <Section title="在售套餐目录" class="mt-5">
-        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <For each={plans()}>
-            {plan => {
-              const active = () => plan.id === currentPlanId();
-              return (
-                <Card class={active() ? "border-primary/60" : undefined}>
-                  <div class="flex items-start justify-between gap-2 border-b p-4">
-                    <div>
-                      <div class="flex flex-wrap items-center gap-2">
-                        <h3 class="text-sm font-semibold">{plan.name}</h3>
-                        <Badge variant={planModeMeta(plan.mode).variant}>
-                          {planModeMeta(plan.mode).label}
-                        </Badge>
+      <Show when={plans().length > 0}>
+        <Section title="在售套餐目录" class="mt-5">
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <For each={plans()}>
+              {plan => {
+                const active = () => plan.id === currentPlanId();
+                return (
+                  <Card class={active() ? "border-primary/60" : undefined}>
+                    <div class="flex items-start justify-between gap-2 border-b p-4">
+                      <div>
+                        <div class="flex flex-wrap items-center gap-2">
+                          <h3 class="text-sm font-semibold">{plan.name}</h3>
+                          <Badge variant={planModeMeta(plan.mode).variant}>
+                            {planModeMeta(plan.mode).label}
+                          </Badge>
+                        </div>
+                        <p class="mt-1.5 text-xs text-muted-foreground">
+                          {plan.mode === "pay_as_you_go"
+                            ? "零月费 · 按模型标准价从余额扣费"
+                            : `含 ${plan.model_count} 个模型 · 超量${plan.overage_mode === "disabled" ? "停止调用" : "转余额计费"}`}
+                        </p>
                       </div>
-                      <p class="mt-1.5 text-xs text-muted-foreground">
-                        {plan.mode === "pay_as_you_go"
-                          ? "零月费 · 按模型标准价从余额扣费"
-                          : `含 ${plan.model_count} 个模型 · 超量${plan.overage_mode === "disabled" ? "停止调用" : "转余额计费"}`}
-                      </p>
-                    </div>
-                    <Show when={active()}>
-                      <Badge variant="success">使用中</Badge>
-                    </Show>
-                  </div>
-
-                  <div class="p-4">
-                    <p class="text-2xl font-semibold tracking-tight">
-                      <Show
-                        when={hasPrice(plan)}
-                        fallback={<span class="text-base">按量付费</span>}
-                      >
-                        <DecimalSplit text={formatPoints(plan.price)} />
-                        <span class="ml-1 text-xs font-normal text-muted-foreground">
-                          积分 / {plan.quota_period_days || "—"} 天
-                        </span>
+                      <Show when={active()}>
+                        <Badge variant="success">使用中</Badge>
                       </Show>
-                    </p>
+                    </div>
 
-                    <dl class="mt-3 space-y-1.5 text-xs">
-                      <div class="flex justify-between gap-3">
-                        <dt class="text-muted-foreground">
-                          {plan.quota_kind === "requests" ? "周期点数" : "周期额度"}
-                        </dt>
-                        <dd class="font-medium tabular-nums">{quotaLabel(plan)}</dd>
-                      </div>
-                      <div class="flex justify-between gap-3">
-                        <dt class="text-muted-foreground">计价方式</dt>
-                        <dd class="font-medium">
-                          {plan.pricing_mode === "table"
-                            ? "全模型标准价"
-                            : `标准价 ×${plan.markup_multiplier ?? 1}`}
-                        </dd>
-                      </div>
-                      <div class="flex justify-between gap-3">
-                        <dt class="text-muted-foreground">超量策略</dt>
-                        <dd class="font-medium">
-                          {plan.overage_mode === "disabled" ? "停止调用" : "转余额按量计费"}
-                        </dd>
-                      </div>
-                      <Show when={plan.quota_kind === "requests" && plan.weight_max > 0}>
+                    <div class="p-4">
+                      <p class="text-2xl font-semibold tracking-tight">
+                        <Show
+                          when={hasPrice(plan)}
+                          fallback={<span class="text-base">按量付费</span>}
+                        >
+                          <DecimalSplit text={formatPoints(plan.price)} />
+                          <span class="ml-1 text-xs font-normal text-muted-foreground">
+                            积分 / {plan.quota_period_days || "—"} 天
+                          </span>
+                        </Show>
+                      </p>
+
+                      <dl class="mt-3 space-y-1.5 text-xs">
                         <div class="flex justify-between gap-3">
-                          <dt class="text-muted-foreground">权重区间</dt>
-                          <dd class="font-medium tabular-nums">
-                            {plan.weight_min} – {plan.weight_max}
+                          <dt class="text-muted-foreground">
+                            {plan.quota_kind === "requests" ? "周期点数" : "周期额度"}
+                          </dt>
+                          <dd class="font-medium tabular-nums">{quotaLabel(plan)}</dd>
+                        </div>
+                        <div class="flex justify-between gap-3">
+                          <dt class="text-muted-foreground">计价方式</dt>
+                          <dd class="font-medium">
+                            {plan.pricing_mode === "table"
+                              ? "全模型标准价"
+                              : `标准价 ×${plan.markup_multiplier ?? 1}`}
                           </dd>
                         </div>
-                      </Show>
-                    </dl>
+                        <div class="flex justify-between gap-3">
+                          <dt class="text-muted-foreground">超量策略</dt>
+                          <dd class="font-medium">
+                            {plan.overage_mode === "disabled" ? "停止调用" : "转余额按量计费"}
+                          </dd>
+                        </div>
+                        <Show when={plan.quota_kind === "requests" && plan.weight_max > 0}>
+                          <div class="flex justify-between gap-3">
+                            <dt class="text-muted-foreground">权重区间</dt>
+                            <dd class="font-medium tabular-nums">
+                              {plan.weight_min} – {plan.weight_max}
+                            </dd>
+                          </div>
+                        </Show>
+                      </dl>
 
-                    <Button
-                      class="mt-4 w-full"
-                      variant={active() ? "outline" : "default"}
-                      disabled={active()}
-                      onClick={() => setPending(plan)}
-                    >
-                      {active()
-                        ? "当前套餐"
-                        : plan.mode === "pay_as_you_go"
-                          ? "切换到此套餐"
-                          : "立即订阅"}
-                    </Button>
-                  </div>
-                </Card>
+                      <Button
+                        class="mt-4 w-full"
+                        variant={active() ? "outline" : "default"}
+                        disabled={active()}
+                        onClick={() => setPending(plan)}
+                      >
+                        {active()
+                          ? "当前套餐"
+                          : plan.mode === "pay_as_you_go"
+                            ? "切换到此套餐"
+                            : "立即订阅"}
+                      </Button>
+                    </div>
+                  </Card>
               );
             }}
           </For>
-        </div>
-      </Section>
+          </div>
+        </Section>
+      </Show>
 
       <div class="mt-5 space-y-1.5 text-xs text-muted-foreground">
         <p>
