@@ -50,5 +50,5 @@ export async function POST({ request }: APIEvent) {
 
   const token = await signSession({ sub: user.id, tv: user.tokenVersion, role: user.role });
 
-  return json({ token, user: publicUser(user) }, 200, { "set-cookie": sessionCookie(token) });
+  return json({ token, user: publicUser(user) }, 200, { "set-cookie": sessionCookie(token, request) });
 }

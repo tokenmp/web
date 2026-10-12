@@ -71,20 +71,35 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
 
 /* ------------------------------------------------------------- cookie 读写 */
 
-export function sessionCookie(token: string, maxAge = SESSION_MAX_AGE) {
+/**
+ * 请求是不是走 HTTPS。
+ *
+ * 不能看 NODE_ENV：本机 6789 上是 http，线上 tokenmp.top 前面有反向代理做 TLS 终结，
+ * 两边的 NODE_ENV 都是 production。按 NODE_ENV 加 Secure，浏览器访问
+ * http://r86s.local:6789 这类非 localhost 的地址时会直接丢掉 cookie，
+ * 登录之后又被守卫弹回登录页。
+ *
+ * 代理终结 TLS 时到达进程的 URL 还是 http，所以先看代理留下的 x-forwarded-proto。
+ */
+function isSecureRequest(request: Request) {
+  const forwarded = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  if (forwarded) return forwarded === "https";
+  return new URL(request.url).protocol === "https:";
+}
+
+export function sessionCookie(token: string, request: Request, maxAge = SESSION_MAX_AGE) {
   return [
     `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
     "Path=/",
     "HttpOnly",
     "SameSite=Lax",
     `Max-Age=${maxAge}`,
-    // 本地是 http，只有生产才加 Secure
-    ...(process.env.NODE_ENV === "production" ? ["Secure"] : []),
+    ...(isSecureRequest(request) ? ["Secure"] : []),
   ].join("; ");
 }
 
-export function clearSessionCookie() {
-  return sessionCookie("", 0);
+export function clearSessionCookie(request: Request) {
+  return sessionCookie("", request, 0);
 }
 
 export function readSessionCookie(request: Request) {

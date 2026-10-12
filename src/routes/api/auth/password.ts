@@ -71,5 +71,5 @@ export async function POST({ request }: APIEvent) {
     role: user.role,
   });
 
-  return json({ data: { token } }, 200, { "set-cookie": sessionCookie(token) });
+  return json({ data: { token } }, 200, { "set-cookie": sessionCookie(token, request) });
 }
