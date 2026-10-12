@@ -1,7 +1,7 @@
 import { Title } from "@solidjs/meta";
 import { A, createAsync } from "@solidjs/router";
 import ChevronRight from "lucide-solid/icons/chevron-right";
-import { createSignal, For } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 
 import { Delta } from "~/components/panel/delta";
 import { ResponsiveTable } from "~/components/panel/responsive-table";
@@ -12,14 +12,21 @@ import { DecimalSplit } from "~/components/ui/decimal-split";
 import { Segmented } from "~/components/ui/segmented";
 import {
   availablePoints,
-  currentPlan,
   panelCredits,
   panelMe,
   usageSeries,
   type BalanceTransaction,
 } from "~/lib/panel-data";
 import { txSourceMeta } from "~/lib/panel-labels";
+import { createClientResource } from "~/lib/resource";
 import { getCurrentUser } from "~/lib/session";
+import {
+  emptyPlans,
+  fetchMe,
+  fetchPlans,
+  resolvePanelPlan,
+  type PanelMe,
+} from "~/lib/user-panel";
 import { cn } from "~/lib/utils";
 import {
   formatDate,
@@ -41,19 +48,27 @@ const METRIC_OPTIONS: { value: "tokens" | "revenue"; label: string }[] = [
  * 一屏回答三个问题：还剩多少、最近用得怎么样、钱的去向。
  * 所以顺序是 KPI 指条 → 用量趋势 → 当前套餐还剩多少 → 最近流水。
  *
- * 数据本机还没有（接口在 openapi.yaml 的 UserPanel 一组里，本地未实现），
- * 先用 panel-data 的示例数据把版式定下来。
+ * KPI、用量图、最近流水还读 panel-data 的示例数据（对应接口在本机未实现，
+ * 或只有网关回写后才会有数据）。「当前套餐」那一块已经接了接口，
+ * 界面上的套餐名与额度跟后台和订阅对得上。
  */
 export default function PanelOverview() {
   const user = createAsync(() => getCurrentUser());
+  // 后台绑的套餐（users.plan_id）与自助订阅（subscriptions 行）是两回事，两个都要拉
+  const plans = createClientResource(fetchPlans, emptyPlans);
+  const me = createClientResource<PanelMe | null>(fetchMe, null);
   const [metric, setMetric] = createSignal<"tokens" | "revenue">("tokens");
 
+  const current = () => resolvePanelPlan(plans.data(), me.data()?.plan_id);
   const today = () => usageSeries[usageSeries.length - 1];
   const totalTokens = () => usageSeries.reduce((sum, day) => sum + day.tokens, 0);
   const totalRevenue = () => usageSeries.reduce((sum, day) => sum + day.revenue, 0);
   const recent = () => panelCredits.transactions.slice(0, 5);
-  const quotaRate = () =>
-    currentPlan.quota_limit > 0 ? currentPlan.quota_used / currentPlan.quota_limit : 0;
+  const quotaRate = () => {
+    const value = current()?.subscription;
+    if (!value || value.quota_limit <= 0) return 0;
+    return value.quota_used / value.quota_limit;
+  };
 
   const kpis = () => [
     {
@@ -129,9 +144,14 @@ export default function PanelOverview() {
             <div>
               <h2 class="text-sm font-semibold">当前套餐</h2>
               <p class="mt-1 text-xs text-muted-foreground">
-                {currentPlan.plan.name}
-                <span> · </span>
-                <DecimalSplit text={formatPoints(currentPlan.plan.price ?? 0)} /> 积分/周期
+                <Show
+                  when={current()}
+                  fallback={plans.loading() || me.loading() ? "读取中…" : "还没有绑定套餐"}
+                >
+                  {current()!.plan.name}
+                  <span> · </span>
+                  <DecimalSplit text={formatPoints(current()!.plan.price ?? 0)} /> 积分/周期
+                </Show>
               </p>
             </div>
             <A
@@ -144,36 +164,53 @@ export default function PanelOverview() {
           </div>
 
           <div class="p-4">
-            <div class="flex items-center justify-between text-sm">
-              <span class="text-muted-foreground">额度已用</span>
-              <span>
-                <DecimalSplit text={formatPoints(currentPlan.quota_used)} /> /{" "}
-                <DecimalSplit text={formatPoints(currentPlan.quota_limit)} />
-              </span>
-            </div>
-            <div
-              class="mt-2 h-2 overflow-hidden rounded-full bg-muted"
-              role="progressbar"
-              aria-valuenow={Math.round(quotaRate() * 100)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label="套餐额度已用"
+            <Show
+              when={current()?.subscription}
+              fallback={
+                <p class="text-sm text-muted-foreground">
+                  {current()
+                    ? "这个套餐还没有开通周期，到套餐页订阅一档就有周期额度。"
+                    : "到套餐页挑一档订阅，或选「按量付费」只按实际用量从余额扣费。"}
+                </p>
+              }
             >
+              <div class="flex items-center justify-between text-sm">
+                <span class="text-muted-foreground">额度已用</span>
+                <span>
+                  <DecimalSplit text={formatPoints(current()!.subscription!.quota_used)} /> /{" "}
+                  <DecimalSplit text={formatPoints(current()!.subscription!.quota_limit)} />
+                </span>
+              </div>
               <div
-                class="h-full rounded-full bg-primary"
-                style={{ width: `${Math.min(100, quotaRate() * 100)}%` }}
-              />
-            </div>
-            <p class="mt-2 text-xs text-muted-foreground">
-              剩余 <DecimalSplit text={formatPoints(currentPlan.quota_limit - currentPlan.quota_used)} />{" "}
-              积分
-              {currentPlan.period_start && currentPlan.period_end && (
-                <>
-                  <span> · 周期 </span>
-                  {formatDate(currentPlan.period_start)} ~ {formatDate(currentPlan.period_end)}
-                </>
-              )}
-            </p>
+                class="mt-2 h-2 overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-valuenow={Math.round(quotaRate() * 100)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="套餐额度已用"
+              >
+                <div
+                  class="h-full rounded-full bg-primary"
+                  style={{ width: `${Math.min(100, quotaRate() * 100)}%` }}
+                />
+              </div>
+              <p class="mt-2 text-xs text-muted-foreground">
+                剩余{" "}
+                <DecimalSplit
+                  text={formatPoints(
+                    current()!.subscription!.quota_limit - current()!.subscription!.quota_used,
+                  )}
+                />{" "}
+                积分
+                {current()!.subscription!.period_start && current()!.subscription!.period_end && (
+                  <>
+                    <span> · 周期 </span>
+                    {formatDate(current()!.subscription!.period_start)} ~{" "}
+                    {formatDate(current()!.subscription!.period_end)}
+                  </>
+                )}
+              </p>
+            </Show>
           </div>
         </Card>
 

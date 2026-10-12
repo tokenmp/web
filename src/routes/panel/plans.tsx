@@ -14,9 +14,12 @@ import { planModeMeta, pricingModeMeta } from "~/lib/panel-labels";
 import { createClientResource } from "~/lib/resource";
 import {
   emptyPlans,
+  fetchMe,
   fetchPlans,
   isInsufficientBalance,
+  resolvePanelPlan,
   subscribePlan,
+  type PanelMe,
   type PanelPlan,
 } from "~/lib/user-panel";
 import { formatDate, formatNumber, formatPoints } from "~/lib/utils";
@@ -55,18 +58,20 @@ function hasPrice(plan: PanelPlan) {
  */
 export default function PanelPlans() {
   const { data, loading, error, reload } = createClientResource(fetchPlans, emptyPlans);
+  // users.plan_id 单独拉：后台只绑定、没开周期时，当前套餐要靠它才显示得出来
+  const me = createClientResource<PanelMe | null>(fetchMe, null);
   const [pending, setPending] = createSignal<PanelPlan | null>(null);
   const [subscribed, setSubscribed] = createSignal<string | null>(null);
   const [notice, setNotice] = createSignal("");
   const [subscribing, setSubscribing] = createSignal(false);
 
   const plans = () => data().plans;
-  const current = () => data().current;
+  const current = () => resolvePanelPlan(data(), me.data()?.plan_id);
   const currentPlanId = () => current()?.plan.id ?? null;
 
-  const left = () => daysLeft(current()?.period_end);
+  const left = () => daysLeft(current()?.subscription?.period_end);
   const used = () => {
-    const value = current();
+    const value = current()?.subscription;
     if (!value || value.quota_limit <= 0) return 0;
     return value.quota_used / value.quota_limit;
   };
@@ -155,7 +160,12 @@ export default function PanelPlans() {
             <div>
               <div class="flex flex-wrap items-center gap-2">
                 <h2 class="text-base font-semibold tracking-tight">{current()!.plan.name}</h2>
-                <Badge variant="success">订阅中</Badge>
+                <Show
+                  when={current()!.subscription}
+                  fallback={<Badge variant="outline">已绑定，未开通周期</Badge>}
+                >
+                  <Badge variant="success">订阅中</Badge>
+                </Show>
                 <Badge variant={pricingModeMeta(current()!.plan.pricing_mode).variant}>
                   {pricingModeMeta(current()!.plan.pricing_mode).label}
                   {current()!.plan.markup_multiplier
@@ -164,8 +174,14 @@ export default function PanelPlans() {
                 </Badge>
               </div>
               <p class="mt-1.5 text-xs text-muted-foreground">
-                周期 {formatDate(current()!.period_start)} – {formatDate(current()!.period_end)}
-                {left() !== null && <span> · 剩余 {left()} 天</span>}
+                <Show
+                  when={current()!.subscription}
+                  fallback="后台已完成绑定，还没有开通周期。下面挑一档订阅，就有周期额度。"
+                >
+                  周期 {formatDate(current()!.subscription!.period_start)} –{" "}
+                  {formatDate(current()!.subscription!.period_end)}
+                  {left() !== null && <span> · 剩余 {left()} 天</span>}
+                </Show>
               </p>
             </div>
 
@@ -174,32 +190,36 @@ export default function PanelPlans() {
             </Button>
           </div>
 
-          <div class="p-4">
-            <div class="flex items-center justify-between text-sm">
-              <span class="text-muted-foreground">本周期额度用量</span>
-              <span>
-                <DecimalSplit text={formatPoints(current()!.quota_used)} /> /{" "}
-                <DecimalSplit text={formatPoints(current()!.quota_limit)} />
-              </span>
+          <Show when={current()!.subscription}>
+            <div class="p-4">
+              <div class="flex items-center justify-between text-sm">
+                <span class="text-muted-foreground">本周期额度用量</span>
+                <span>
+                  <DecimalSplit text={formatPoints(current()!.subscription!.quota_used)} /> /{" "}
+                  <DecimalSplit text={formatPoints(current()!.subscription!.quota_limit)} />
+                </span>
+              </div>
+              <div
+                class="mt-2 h-2 overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-valuenow={Math.round(used() * 100)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="本周期额度用量"
+              >
+                <div class="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, used() * 100)}%` }} />
+              </div>
+              <p class="mt-2 text-xs text-muted-foreground">
+                剩余{" "}
+                <DecimalSplit
+                  text={formatPoints(
+                    current()!.subscription!.quota_limit - current()!.subscription!.quota_used,
+                  )}
+                />{" "}
+                积分 · 到期后额度自动重置，未用部分不结转
+              </p>
             </div>
-            <div
-              class="mt-2 h-2 overflow-hidden rounded-full bg-muted"
-              role="progressbar"
-              aria-valuenow={Math.round(used() * 100)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label="本周期额度用量"
-            >
-              <div class="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, used() * 100)}%` }} />
-            </div>
-            <p class="mt-2 text-xs text-muted-foreground">
-              剩余{" "}
-              <DecimalSplit
-                text={formatPoints(current()!.quota_limit - current()!.quota_used)}
-              />{" "}
-              积分 · 到期后额度自动重置，未用部分不结转
-            </p>
-          </div>
+          </Show>
         </Card>
       </Show>
 
