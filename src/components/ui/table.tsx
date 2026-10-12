@@ -38,7 +38,7 @@ export function TableHead(props: ComponentProps<"th"> & { class?: string }) {
   const [local, others] = splitProps(props, ["class"]);
   return (
     <th
-      class={cn("whitespace-nowrap px-5 py-2.5 text-left align-middle font-medium", local.class)}
+      class={cn("whitespace-nowrap px-4 py-2.5 text-left align-middle font-medium", local.class)}
       {...others}
     />
   );
@@ -49,6 +49,6 @@ export function TableCell(props: ComponentProps<"td"> & { class?: string }) {
   // 表头有 whitespace-nowrap 而单元格没有，窄屏下单元格会被压窄、内容折行，
   // 表格就展不开、也滚不起来。需要折行的内容（比如两行的用户信息）自己用 div 控制。
   return (
-    <td class={cn("whitespace-nowrap px-5 py-3 align-middle", local.class)} {...others} />
+    <td class={cn("whitespace-nowrap px-4 py-3 align-middle", local.class)} {...others} />
   );
 }

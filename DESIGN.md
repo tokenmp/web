@@ -27,6 +27,8 @@
 | 圆角 | `--radius: 0.5rem`，`rounded-md`、`rounded-lg`、`rounded-xl` 由它派生 |
 | 字体 | 系统栈：`-apple-system`、`PingFang SC`、`Microsoft YaHei` 等 |
 | 数字 | 金额和用量加 `.tabular-nums`，位数对齐 |
+| 控件高度 | 同一行里的控件只有两种高度：手机 40px、桌面 36px。输入框、下拉触发器、默认按钮、分段控件共用 `h-10 sm:h-9` 这一个写法 |
+| 卡片内边距 | 横向一律 16px。工具条、表头、单元格、分页条从同一条线开始，不要写 `px-5` |
 | 动效 | 默认 150ms，`prefers-reduced-motion` 下全局降到 0.01ms |
 | 移动适配 | 输入框移动端 16px（避免 iOS 聚焦缩放），安全区用 `.pt-safe`、`.pb-safe` |
 
@@ -57,13 +59,12 @@
 
 | 区域 | 桌面（≥1024px） | 移动（<1024px） |
 | --- | --- | --- |
-| 导航 | 左侧固定侧边栏，宽 240px，右侧 1px 边框 | 抽屉，宽 256px，遮罩点击关闭 |
-| 顶栏 | 高 56px，粘顶，半透明加毛玻璃，显示当前页名 | 同左，左侧多一个汉堡按钮 |
+| 导航 | 左侧固定侧边栏，宽 240px，右侧 1px 边框 | 底部导航，高 64px，四个常用项加一个「更多」 |
+| 顶栏 | 高 56px，粘顶，半透明加毛玻璃，显示当前页名 | 同左 |
 | 内容区 | 左边距 240px，内边距 24px | 内边距 16px 到 20px |
-| 主题切换 | 侧边栏底部，带文字 | 顶栏右侧，只有图标 |
+| 主题切换 | 侧边栏底部与顶栏账户菜单各一处 | 账户菜单里 |
 
-用户面板（`/panel`）是另一套外壳：侧栏按 模型与密钥 / 数据 / 财务 / 账户 分四组，断点用 `md`（768px），
-手机底栏五项铺满，登出与换主题收进「个人中心」页。版面与线上一致，取舍写在 [README](README.md) 的「用户面板」一节。
+控制台与用户面板共用这一套外壳。两边的 `nav` 数组不一样，布局只有一份。
 
 ### 页面
 
@@ -113,27 +114,28 @@
 | Input | [input.tsx](src/components/ui/input.tsx) | 单一形态，移动端 16px 高 40px，桌面 14px 高 36px |
 | Label | [label.tsx](src/components/ui/label.tsx) | 单一形态 |
 | Badge | [badge.tsx](src/components/ui/badge.tsx) | default、secondary、outline、success、warning、destructive |
-| Segmented | [segmented.tsx](src/components/ui/segmented.tsx) | 分段切换，选中项用主色实心底；选项可传字符串数组或 {value, label} |
+| Segmented | [segmented.tsx](src/components/ui/segmented.tsx) | 分段切换，选中项用主色实心底；选项可传字符串数组或 {value, label}。高度跟输入框走同一条线（手机 40px、桌面 36px），选项带 `shrink-0` 与 `whitespace-nowrap`，窄屏下不会被压得把文字折成两行 |
 | Table | [table.tsx](src/components/ui/table.tsx) | Table、TableHeader、TableBody、TableRow、TableHead、TableCell，窄屏横向滚动 |
 | Textarea | [textarea.tsx](src/components/ui/textarea.tsx) | 单一形态，样式跟 Input 一致，用于公告正文 |
 | Select | [select.tsx](src/components/ui/select.tsx) | 下拉选择，Kobalte 原语。对外只暴露「选项值字符串」（`string \| null`），Kobalte 认的选项对象换算收在组件里。放在 Dialog 里要传 `portal={false}`，标签交给它的 `label` 属性渲染（Kobalte 只认自己注册的标签 id） |
 | Switch | [switch.tsx](src/components/ui/switch.tsx) | 开关，Kobalte 原语，真实 checkbox 藏在圆点下面（键盘与读屏都能用） |
 | EmptyState | [empty-state.tsx](src/components/ui/empty-state.tsx) | 空态：标题、说明与可选操作，失败态另写 |
 | DecimalSplit | [decimal-split.tsx](src/components/ui/decimal-split.tsx) | 大数拆分：整数部分常规、小数部分更小更淡 |
-| Pager | [pager.tsx](src/components/ui/pager.tsx) | 分页条，带每页条数下拉；`PagerIfNeeded` 只在一页放不下时才出现 |
+| Pager | [pager.tsx](src/components/ui/pager.tsx) | 分页条，带每页条数下拉；`PagerIfNeeded` 只在一页放不下时才出现。横向内边距收在组件里（16px），调用方不再包一层 `px-4` / `px-5` 的外壳；已经在带内边距的底栏里时传 `class="px-0"` |
+| Toolbar | [toolbar.tsx](src/components/ui/toolbar.tsx) | 卡片顶部那一条筛选与操作行，配套 `ToolbarSearch`、`ToolbarSpacer`、`ToolbarDivider`。行内控件的标签一律画在控件左边（Select 传 `labelPlacement="inline"`），分段控件不给可见标签，两个分段之间插分隔线。末尾的控件用 `ToolbarSpacer` 顶到最右，它在手机上也要渲染；末尾控件会单独落到下一行时用 `ml-auto` |
 | Dialog | [dialog.tsx](src/components/ui/dialog.tsx) | 居中模态，底部操作区可自定义，配套 `DialogClose` |
-| Sheet | [sheet.tsx](src/components/ui/sheet.tsx) | `side="right"` 右侧抽屉（手机 92vw、平板 26rem、桌面 32rem），`side="bottom"` 底部抽屉，配套 `SheetClose`；宽度可用 `class` 覆盖 |
+| Sheet | [sheet.tsx](src/components/ui/sheet.tsx) | `side="right"` 右侧抽屉（手机 92vw、平板 26rem、桌面 32rem），`side="bottom"` 底部抽屉（手机端放操作选择），配套 `SheetClose`；宽度可用 `class` 覆盖。两种用法：给一个 `trigger` 点开，或传 `open` 与 `onOpenChange` 自己控制、不要触发器 —— 一个抽屉要被多行触发时用后者，比每行各建一个 Dialog 轻。`triggerClass` 可以覆盖触发器的按钮样式（整行当触发器时要撑满、去掉描边） |
 
 ### 布局组件
 
 | 组件 | 文件 | 说明 |
 | --- | --- | --- |
-| AppShell | [app-shell.tsx](src/components/layout/app-shell.tsx) | 侧边栏、顶栏、移动抽屉。接收 `nav` 数组，按路径最长匹配点亮导航项，抽屉关闭时带 `inert` |
+| AppShell | [app-shell.tsx](src/components/layout/app-shell.tsx) | 控制台与用户面板共用的外壳：侧边栏（宽 240px，断点 `lg`）、顶栏、手机底部导航与「更多」抽屉。接收 `nav` 数组，按路径最长匹配点亮导航项，标了 `primary` 的项进底栏 |
 | VersionLabel | 同上 | 页脚的系统版本号，桌面端在侧边栏底部，移动端在「更多」抽屉末尾 |
 | AnnouncementBanner | [announcement-banner.tsx](src/components/layout/announcement-banner.tsx) | 全站公告条，按级别着色（提示 / 注意 / 重要），可关闭的带关闭按钮 |
 | NotificationBell | [notification-bell.tsx](src/components/layout/notification-bell.tsx) | 顶栏通知铃铛，Kobalte Popover 装的列表，带未读徽标 |
-| PageHeader | [page-header.tsx](src/components/layout/page-header.tsx) | 页面头部：一句说明加右侧操作区。页面名由顶栏显示，这里不再重复放标题 |
-| StatRow | 同上 | 一排指标卡，页面概览用 |
+| PageHeader | [page-header.tsx](src/components/layout/page-header.tsx) | 页面头部：一句说明加右侧操作区。页面名由顶栏显示，这里不再重复放标题。说明占满剩下的宽度，所以只有按钮的页面按钮也停在右边。按钮管的就是下面那张卡片时，放进卡片的工具条（`ToolbarSpacer` 顶到最右），页头只留给管整页的操作 |
+| StatRow | 同上 | 一排指标卡，页面概览用。有补充说明的卡片用 `mt-auto` 把说明压到底部，一排卡片的高度对齐 |
 
 ### 面板组件
 
@@ -141,7 +143,7 @@
 
 | 组件 | 文件 | 说明 |
 | --- | --- | --- |
-| ResponsiveTable | [responsive-table.tsx](src/components/panel/responsive-table.tsx) | 同一份数据桌面渲染表格、手机渲染卡片流，用 `md:` 切换，不靠 JS 判断断点 |
+| ResponsiveTable | [responsive-table.tsx](src/components/panel/responsive-table.tsx) | 同一份数据桌面渲染表格、手机渲染一份行列表（`divide-y` 连成一张列表，每行不画描边也不加底色），用 `md:` 切换，不靠 JS 判断断点。传了 `actions` 时手机端整行可点，点开底部操作面板把操作竖向列出；桌面端照旧在「操作」列直接摆按钮 |
 | UsageChart | [usage-chart.tsx](src/components/panel/usage-chart.tsx) | 近 7 日按模型堆叠的柱状图，手写 SVG，悬浮出当天明细 |
 | Delta | [delta.tsx](src/components/panel/delta.tsx) | 流水变动，入账成功色、扣款危险色，带符号 |
 | DetailRow / MetricGrid | [detail-row.tsx](src/components/panel/detail-row.tsx) | 详情抽屉里的「标签 - 值」行与指标格 |
@@ -167,6 +169,6 @@
 | [src/lib/utils.ts](src/lib/utils.ts) | `cn()` 合并类名，`formatNumber()`、`formatCurrency()` 与几个时间格式化 |
 | [src/lib/system.ts](src/lib/system.ts) | 版本、公告、通知的客户端数据层，走 `/api` 下的接口 |
 | [src/lib/panel-labels.ts](src/lib/panel-labels.ts) | 面板里各种状态值到徽标的映射 |
-| [src/lib/panel-nav.tsx](src/lib/panel-nav.tsx) | 面板的分组导航与手机底栏 |
+| [src/lib/panel-nav.tsx](src/lib/panel-nav.tsx) | 面板导航，跟控制台的 [nav.tsx](src/lib/nav.tsx) 同一种写法：一列平铺，标了 `primary` 的进手机底栏 |
 | [src/lib/resource.ts](src/lib/resource.ts) | `createClientResource()`：只在客户端取数，避开 SSR 下的相对路径 `fetch` |
 | [src/entry-server.tsx](src/entry-server.tsx) | 首屏内联脚本，在 bundle 之前读偏好加 `.dark`，避免闪白 |

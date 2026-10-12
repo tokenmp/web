@@ -156,22 +156,22 @@ function AdminRecharge() {
       <StatRow items={stats()} />
 
       <Card class="overflow-hidden">
-        <div class="border-b p-4">
-          <div class="mb-3">
-            <Segmented
-              options={STATUS_OPTIONS}
-              value={status()}
-              onChange={value => {
-                setStatus(value);
-                setPage(1);
-                void orders.reload();
-              }}
-              ariaLabel="按充值单状态筛选"
-            />
-          </div>
+        {/* 这一条是多字段筛选表单，不是一行工具条，所以标签画在控件上方（跟弹窗里一致），
+            但标签块的高度要和 Select 自带的 top 标签对齐：space-y-1.5 套 leading-none 的 Label */}
+        <div class="space-y-3 border-b px-4 py-3">
+          <Segmented
+            options={STATUS_OPTIONS}
+            value={status()}
+            onChange={value => {
+              setStatus(value);
+              setPage(1);
+              void orders.reload();
+            }}
+            ariaLabel="按充值单状态筛选"
+          />
 
           <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div class="space-y-2">
+            <div class="space-y-1.5">
               <Label for="recharge-user">用户 ID</Label>
               <Input
                 id="recharge-user"
@@ -181,7 +181,7 @@ function AdminRecharge() {
                 onInput={event => setUserId(event.currentTarget.value)}
               />
             </div>
-            <div class="space-y-2">
+            <div class="space-y-1.5">
               <Label for="recharge-channel">渠道</Label>
               <Input
                 id="recharge-channel"
@@ -190,7 +190,7 @@ function AdminRecharge() {
                 onInput={event => setChannel(event.currentTarget.value)}
               />
             </div>
-            <div class="space-y-2">
+            <div class="space-y-1.5">
               <Label for="recharge-start">开始时间</Label>
               <Input
                 id="recharge-start"
@@ -199,7 +199,7 @@ function AdminRecharge() {
                 onInput={event => setStart(event.currentTarget.value)}
               />
             </div>
-            <div class="space-y-2">
+            <div class="space-y-1.5">
               <Label for="recharge-end">结束时间</Label>
               <Input
                 id="recharge-end"
@@ -284,22 +284,20 @@ function AdminRecharge() {
           </TableBody>
         </Table>
 
-        <div class="px-4">
-          <PagerIfNeeded
-            page={page()}
-            size={size()}
-            total={orders.data().total}
-            onPageChange={next => {
-              setPage(next);
-              void orders.reload();
-            }}
-            onSizeChange={next => {
-              setSize(next);
-              setPage(1);
-              void orders.reload();
-            }}
-          />
-        </div>
+        <PagerIfNeeded
+          page={page()}
+          size={size()}
+          total={orders.data().total}
+          onPageChange={next => {
+            setPage(next);
+            void orders.reload();
+          }}
+          onSizeChange={next => {
+            setSize(next);
+            setPage(1);
+            void orders.reload();
+          }}
+        />
       </Card>
     </>
   );

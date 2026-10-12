@@ -24,15 +24,21 @@ export function SheetClose(props: {
 }
 
 export type SheetProps = {
-  trigger: JSX.Element;
+  /** 触发器。受控用法（传了 open）可以不传 */
+  trigger?: JSX.Element;
   /** right 用于桌面端的详情与筛选，bottom 用于移动端的操作选择 */
   side?: SheetSide;
-  title: string;
-  description?: string;
+  title: JSX.Element;
+  description?: JSX.Element;
   children?: JSX.Element;
   footer?: JSX.Element;
   /** 宽度等外覆样式。要更宽或更窄时传进来，不必在页面里复制整套外壳 */
   class?: string;
+  /** 覆盖触发器的按钮样式。整合行当触发器时要撑满整行、去掉描边与圆角 */
+  triggerClass?: string;
+  /** 传了就是受控：自己管开关。不传就跟触发器一起用，点触发器自己开 */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 /**
@@ -52,15 +58,23 @@ const panelBySide: Record<SheetSide, string> = {
 /**
  * 侧边抽屉。side="right" 从右边滑入，用来放详情和筛选；side="bottom" 从底部升起，
  * 适合移动端。两者共用 Kobalte 的 Dialog 原语，所以焦点陷阱与关闭行为跟 Dialog 一致。
+ *
+ * 两种用法：
+ *   1. 给一个 trigger，点它打开。
+ *   2. 传 open 与 onOpenChange，自己控制开关，不要 trigger —— 一页里只有一个抽屉
+ *      但要被多行触发时用这种（比如手机端的行列表，每行点开同一个操作面板），
+ *      比每行各建一个 Dialog 轻。
  */
 export function Sheet(props: SheetProps) {
   const side = () => props.side ?? "right";
 
   return (
-    <KDialog>
-      <KDialog.Trigger class={cn(buttonVariants({ variant: "outline" }))}>
-        {props.trigger}
-      </KDialog.Trigger>
+    <KDialog open={props.open} onOpenChange={props.onOpenChange}>
+      <Show when={props.trigger}>
+        <KDialog.Trigger class={cn(buttonVariants({ variant: "outline" }), props.triggerClass)}>
+          {props.trigger}
+        </KDialog.Trigger>
+      </Show>
 
       <KDialog.Portal>
         <KDialog.Overlay class="animate-overlay-in fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px]" />

@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { Toolbar, ToolbarSpacer } from "~/components/ui/toolbar";
 import { Textarea } from "~/components/ui/textarea";
 import { fetchAdminUsers, type AdminUser } from "~/lib/admin-keys";
 import {
@@ -156,47 +157,52 @@ export default function DashboardNotifications() {
       <StatRow items={stats()} />
 
       <Card class="overflow-hidden">
-        <div class="flex flex-wrap items-end gap-3 border-b p-4">
-          <div class="w-full sm:w-64">
-            <Select
-              label="接收用户"
-              options={userOptions()}
-              value={filterUserId()}
-              onChange={value => {
-                setFilterUserId(value);
-                reload(true);
-              }}
-              placeholder="全部用户"
-            />
-          </div>
+        <Toolbar>
+          <Select
+            label="接收用户"
+            labelPlacement="inline"
+            class="w-full sm:w-56"
+            options={userOptions()}
+            value={filterUserId()}
+            onChange={value => {
+              setFilterUserId(value);
+              reload(true);
+            }}
+            placeholder="全部用户"
+          />
 
           <form
-            class="flex items-end gap-2"
+            class="flex w-full items-center gap-2 sm:w-auto"
             onSubmit={event => {
               event.preventDefault();
               setFilterType(typeInput().trim());
               reload(true);
             }}
           >
-            <div class="space-y-1.5">
-              <Label for="notification-type-filter">通知类型</Label>
-              <Input
-                id="notification-type-filter"
-                class="w-full sm:w-48"
-                placeholder="例如 balance_low"
-                value={typeInput()}
-                onInput={event => setTypeInput(event.currentTarget.value)}
-              />
-            </div>
-            <Button type="submit" variant="outline">
+            <Label
+              for="notification-type-filter"
+              class="shrink-0 whitespace-nowrap text-muted-foreground"
+            >
+              通知类型
+            </Label>
+            <Input
+              id="notification-type-filter"
+              class="w-full sm:w-48"
+              placeholder="例如 balance_low"
+              value={typeInput()}
+              onInput={event => setTypeInput(event.currentTarget.value)}
+            />
+            <Button type="submit" variant="outline" class="shrink-0">
               筛选
             </Button>
           </form>
 
-          <p class="pb-1 text-sm text-muted-foreground lg:ml-auto">
+          <ToolbarSpacer />
+
+          <p class="text-sm text-muted-foreground" aria-live="polite">
             共 {formatNumber(feed.data().total)} 条
           </p>
-        </div>
+        </Toolbar>
 
         <Show when={okNotice()}>
           <p class="border-b bg-success/10 px-4 py-2.5 text-sm text-success-text" role="status">
@@ -290,7 +296,7 @@ export default function DashboardNotifications() {
           </TableBody>
         </Table>
 
-        <div class="border-t px-5">
+        <div class="border-t">
           <PagerIfNeeded
             page={page()}
             size={size()}

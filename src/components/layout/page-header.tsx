@@ -1,7 +1,13 @@
 import { children, For, Show, type JSX } from "solid-js";
 
-/** 页面头部：一句说明加右侧操作区。
- * 页面名已经在顶栏显示，这里不再重复放一遍大标题。 */
+/**
+ * 页面头部：一句说明加右侧操作区。
+ * 页面名已经在顶栏显示，这里不再重复放一遍大标题。
+ *
+ * 说明文字占满剩下的宽度（flex-1），操作区被推到右边。
+ * 之前直接用 justify-between：只有按钮、没有说明时按钮会落在左边，
+ * 有说明的页面按钮又在右边，同一个位置两种摆法。
+ */
 export function PageHeader(props: {
   description?: string;
   children?: JSX.Element;
@@ -14,11 +20,9 @@ export function PageHeader(props: {
 
   return (
     <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-      <Show when={props.description}>
-        <p class="text-sm text-muted-foreground">{props.description}</p>
-      </Show>
+      <p class="min-w-0 flex-1 text-sm text-muted-foreground">{props.description}</p>
       <Show when={resolved()}>
-        <div class="flex flex-wrap items-center gap-2">{resolved()}</div>
+        <div class="flex shrink-0 flex-wrap items-center gap-2">{resolved()}</div>
       </Show>
     </div>
   );
@@ -34,13 +38,13 @@ export function StatRow(props: { items: { label: string; value: string; hint?: s
     <div class="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
       <For each={props.items}>
         {item => (
-          <div class="rounded-xl border bg-card p-3.5 sm:p-4">
+          <div class="flex flex-col rounded-xl border bg-card p-4">
             <p class="text-xs text-muted-foreground sm:text-sm">{item.label}</p>
             <p class="mt-1 text-lg font-semibold tabular-nums tracking-tight sm:mt-1.5 sm:text-xl">
               {item.value}
             </p>
             <Show when={item.hint}>
-              <p class="mt-1 text-xs text-muted-foreground">{item.hint}</p>
+              <p class="mt-auto pt-1 text-xs text-muted-foreground">{item.hint}</p>
             </Show>
           </div>
         )}

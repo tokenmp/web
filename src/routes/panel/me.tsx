@@ -270,15 +270,6 @@ function PanelMePage() {
                   style={{ width: `${Math.min(100, quotaRate() * 100)}%` }}
                 />
               </div>
-              <p class="mt-2 text-xs text-muted-foreground">
-                本周期还可调用{" "}
-                <DecimalSplit
-                  text={formatPoints(
-                    current()!.subscription!.quota_limit - current()!.subscription!.quota_used,
-                  )}
-                />{" "}
-                积分 · 超出后按套餐超量策略处理
-              </p>
             </Show>
           </Show>
         </Card>
@@ -289,7 +280,7 @@ function PanelMePage() {
           </h2>
           <Show
             when={budget()}
-            fallback={<p class="mt-2 text-sm text-muted-foreground">未设置预算，余额不足时才停止调用</p>}
+            fallback={<p class="mt-2 text-sm text-muted-foreground">未设置预算</p>}
           >
             <div class="mt-3 flex items-center justify-between text-sm">
               <span class="text-muted-foreground">
@@ -310,9 +301,6 @@ function PanelMePage() {
                 style={{ width: `${Math.min(100, budgetRate() * 100)}%` }}
               />
             </div>
-            <p class="mt-2 text-xs text-muted-foreground">
-              超出预算后调用会返回 403，需要到「我的」里调整预算或等下一个周期。
-            </p>
           </Show>
         </Card>
       </div>

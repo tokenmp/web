@@ -96,7 +96,7 @@ export default function DashboardOverview() {
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <For each={stats()}>
             {item => (
-              <Card class="p-5">
+              <Card class="p-4">
                 <p class="text-sm text-muted-foreground">{item.label}</p>
                 <p class="mt-2 text-2xl font-semibold tabular-nums tracking-tight">{item.value}</p>
                 <p class="mt-1 text-xs text-muted-foreground">{item.hint}</p>
@@ -107,24 +107,24 @@ export default function DashboardOverview() {
 
         <div class="grid gap-4 lg:grid-cols-7">
           <Card class="lg:col-span-4">
-            <div class="flex items-center justify-between p-5 pb-3">
+            <div class="flex items-center justify-between p-4 pb-3">
               <div>
                 <h2 class="font-semibold tracking-tight">请求趋势</h2>
                 <p class="text-sm text-muted-foreground">近 14 天调用次数</p>
               </div>
               <Badge variant="secondary">14 天</Badge>
             </div>
-            <div class="px-5 pb-5">
+            <div class="px-4 pb-4">
               <TrendChart data={usage.data().items.map(item => item.requests)} />
             </div>
           </Card>
 
           <Card class="lg:col-span-3">
-            <div class="p-5 pb-3">
+            <div class="p-4 pb-3">
               <h2 class="font-semibold tracking-tight">近 7 天收入</h2>
               <p class="text-sm text-muted-foreground">按天统计，条宽按窗口内最高一天归一</p>
             </div>
-            <div class="space-y-3 px-5 pb-5">
+            <div class="space-y-3 px-4 pb-4">
               <Show
                 when={revenueRows().length > 0}
                 fallback={<p class="text-sm text-muted-foreground">暂无计费数据</p>}
@@ -150,7 +150,7 @@ export default function DashboardOverview() {
         </div>
 
         <Card>
-          <div class="flex items-center justify-between p-5 pb-3">
+          <div class="flex items-center justify-between p-4 pb-3">
             <div>
               <h2 class="font-semibold tracking-tight">最近计费流水</h2>
               <p class="text-sm text-muted-foreground">最新的 5 条</p>
@@ -207,12 +207,12 @@ export default function DashboardOverview() {
 
 function Th(props: { children: JSX.Element; class?: string }) {
   return (
-    <th class={cn("px-5 py-2.5 text-left font-medium", props.class)}>{props.children}</th>
+    <th class={cn("px-4 py-2.5 text-left font-medium", props.class)}>{props.children}</th>
   );
 }
 
 function Td(props: { children: JSX.Element; class?: string }) {
-  return <td class={cn("px-5 py-3", props.class)}>{props.children}</td>;
+  return <td class={cn("px-4 py-3", props.class)}>{props.children}</td>;
 }
 
 /** 近 14 天趋势：面积图直接用 SVG 画，不引图表库 */

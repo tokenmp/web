@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { Textarea } from "~/components/ui/textarea";
+import { Toolbar } from "~/components/ui/toolbar";
 import {
   deleteApiKey,
   fetchAdminUsers,
@@ -173,50 +174,53 @@ export default function DashboardApiKeys() {
       <StatRow items={stats()} />
 
       <Card class="overflow-hidden">
-        <div class="flex flex-wrap items-end gap-3 border-b p-4">
+        <Toolbar>
           <form
-            class="flex items-end gap-2"
+            class="flex w-full items-center gap-2 sm:w-auto"
             onSubmit={event => {
               event.preventDefault();
               setUserQuery(userInput().trim());
               void users.reload();
             }}
           >
-            <div class="space-y-1.5">
-              <Label for="key-user-search">按用户名找用户</Label>
-              <div class="relative w-full sm:w-56">
-                <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="key-user-search"
-                  class="pl-8"
-                  placeholder="用户名，可留空"
-                  value={userInput()}
-                  onInput={event => setUserInput(event.currentTarget.value)}
-                />
-              </div>
+            <Label for="key-user-search" class="shrink-0 whitespace-nowrap text-muted-foreground">
+              按用户名找用户
+            </Label>
+            <div class="relative w-full sm:w-44">
+              <Search
+                class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                id="key-user-search"
+                class="pl-9"
+                placeholder="用户名，可留空"
+                value={userInput()}
+                onInput={event => setUserInput(event.currentTarget.value)}
+              />
             </div>
-            <Button type="submit" variant="outline">
+            <Button type="submit" variant="outline" class="shrink-0">
               查询
             </Button>
           </form>
 
-          <div class="min-w-56 flex-1">
-            <Select
-              label="用户"
-              options={userOptions()}
-              value={selected() ? String(selected()!.id) : null}
-              onChange={value => {
-                const user = users.data().find(item => String(item.id) === value);
-                if (user) selectUser(user);
-              }}
-              placeholder={users.loading() ? "加载中…" : "选择要管理密钥的用户"}
-              disabled={users.data().length === 0}
-            />
-          </div>
+          <Select
+            label="用户"
+            labelPlacement="inline"
+            class="w-full sm:w-72"
+            options={userOptions()}
+            value={selected() ? String(selected()!.id) : null}
+            onChange={value => {
+              const user = users.data().find(item => String(item.id) === value);
+              if (user) selectUser(user);
+            }}
+            placeholder={users.loading() ? "加载中…" : "选择要管理密钥的用户"}
+            disabled={users.data().length === 0}
+          />
 
           <Show when={selected()}>
             {user => (
-              <p class="pb-1 text-sm text-muted-foreground">
+              <p class="text-sm text-muted-foreground">
                 #{user().id} · {user().name}
                 <Show when={user().status === 0}>
                   <Badge variant="secondary" class="ml-2">
@@ -226,7 +230,7 @@ export default function DashboardApiKeys() {
               </p>
             )}
           </Show>
-        </div>
+        </Toolbar>
 
         <Show when={notice()}>
           <p

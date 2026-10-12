@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { Textarea } from "~/components/ui/textarea";
+import { Toolbar, ToolbarSpacer } from "~/components/ui/toolbar";
 import { createClientResource } from "~/lib/resource";
 import {
   announcementStatusLabels,
@@ -158,17 +159,18 @@ export default function DashboardAnnouncements() {
       <StatRow items={stats()} />
 
       <Card class="overflow-hidden">
-        <div class="flex flex-wrap items-center gap-2 border-b p-4">
+        <Toolbar>
           <Segmented
             options={STATUS_TABS}
             value={filter()}
             onChange={setFilter}
             ariaLabel="按状态筛选公告"
           />
-          <p class="text-sm text-muted-foreground lg:ml-auto">
+          <ToolbarSpacer />
+          <p class="text-sm text-muted-foreground" aria-live="polite">
             共 {formatNumber(filtered().length)} 条
           </p>
-        </div>
+        </Toolbar>
 
         <Show when={notice()}>
           <p class="border-b bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">

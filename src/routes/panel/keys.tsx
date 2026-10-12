@@ -2,11 +2,9 @@ import { Title } from "@solidjs/meta";
 import Copy from "lucide-solid/icons/copy";
 import KeyRound from "lucide-solid/icons/key-round";
 import Plus from "lucide-solid/icons/plus";
-import Search from "lucide-solid/icons/search";
 import Trash from "lucide-solid/icons/trash";
 import { createMemo, createSignal, Show } from "solid-js";
 
-import { PageHeader } from "~/components/layout/page-header";
 import { ResponsiveTable } from "~/components/panel/responsive-table";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -15,6 +13,7 @@ import { Dialog } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Segmented } from "~/components/ui/segmented";
+import { Toolbar, ToolbarSearch, ToolbarSpacer } from "~/components/ui/toolbar";
 import { keyStatusMeta } from "~/lib/panel-labels";
 import { createClientResource } from "~/lib/resource";
 import {
@@ -142,13 +141,6 @@ export default function PanelKeys() {
     <>
       <Title>我的密钥 | TokenMP 用户面板</Title>
 
-      <PageHeader>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus class="size-4" aria-hidden="true" />
-          新建密钥
-        </Button>
-      </PageHeader>
-
       <Show when={error()}>
         <p class="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
           {error()}
@@ -161,24 +153,28 @@ export default function PanelKeys() {
       </Show>
 
       <Card class="overflow-hidden">
-        <div class="flex flex-wrap items-center gap-2 border-b p-4">
-          <div class="relative w-full sm:w-64">
-            <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              class="pl-8"
-              placeholder="搜索名称 / 前缀"
-              aria-label="搜索密钥"
-              value={keyword()}
-              onInput={event => setKeyword(event.currentTarget.value)}
-            />
-          </div>
+        <Toolbar>
+          <ToolbarSearch
+            placeholder="搜索名称 / 前缀"
+            ariaLabel="搜索密钥"
+            value={keyword()}
+            onInput={setKeyword}
+            class="sm:w-64"
+          />
           <Segmented
             options={STATUS_TABS}
             value={status()}
             onChange={setStatus}
             ariaLabel="按状态筛选密钥"
           />
-        </div>
+          {/* 新建密钥管的就是下面这张卡片，放在同一行：上面的页头只剩它一个按钮时
+              看起来像没做完的区块，中间还隔着一条错误提示的位置 */}
+          <ToolbarSpacer />
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus class="size-4" aria-hidden="true" />
+            新建密钥
+          </Button>
+        </Toolbar>
 
         <ResponsiveTable
           items={filtered()}
