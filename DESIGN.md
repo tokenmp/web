@@ -122,7 +122,7 @@
 | EmptyState | [empty-state.tsx](src/components/ui/empty-state.tsx) | 空态：标题、说明与可选操作，失败态另写 |
 | DecimalSplit | [decimal-split.tsx](src/components/ui/decimal-split.tsx) | 大数拆分：整数部分常规、小数部分更小更淡 |
 | Pager | [pager.tsx](src/components/ui/pager.tsx) | 分页条，带每页条数下拉；`PagerIfNeeded` 只在一页放不下时才出现。横向内边距收在组件里（16px），调用方不再包一层 `px-4` / `px-5` 的外壳；已经在带内边距的底栏里时传 `class="px-0"` |
-| Toolbar | [toolbar.tsx](src/components/ui/toolbar.tsx) | 卡片顶部那一条筛选与操作行，配套 `ToolbarSearch`、`ToolbarSpacer`、`ToolbarDivider`。行内控件的标签一律画在控件左边（Select 传 `labelPlacement="inline"`），分段控件不给可见标签，两个分段之间插分隔线 |
+| Toolbar | [toolbar.tsx](src/components/ui/toolbar.tsx) | 卡片顶部那一条筛选与操作行，配套 `ToolbarSearch`、`ToolbarSpacer`、`ToolbarDivider`。行内控件的标签一律画在控件左边（Select 传 `labelPlacement="inline"`），分段控件不给可见标签，两个分段之间插分隔线。末尾的控件用 `ToolbarSpacer` 顶到最右，它在手机上也要渲染；末尾控件会单独落到下一行时用 `ml-auto` |
 | Dialog | [dialog.tsx](src/components/ui/dialog.tsx) | 居中模态，底部操作区可自定义，配套 `DialogClose` |
 | Sheet | [sheet.tsx](src/components/ui/sheet.tsx) | `side="right"` 右侧抽屉（手机 92vw、平板 26rem、桌面 32rem），`side="bottom"` 底部抽屉，配套 `SheetClose`；宽度可用 `class` 覆盖 |
 
