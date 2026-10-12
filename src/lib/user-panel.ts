@@ -214,3 +214,37 @@ export function fetchPlans() {
 export function subscribePlan(id: number) {
   return postOk(`/api/user/plans/${id}/subscribe`);
 }
+
+/**
+ * 面板上要显示的套餐。
+ *
+ * 后台用户详情里的「套餐」下拉写的是 users.plan_id（绑定），用户自助订阅才写一条
+ * subscriptions 行（周期与额度），二者是可以分开的：只绑定、没订阅时 /user/plans
+ * 的 current 是空的，面板上就什么都不显示 —— 后台刚给用户绑上套餐，切到用户面板
+ * 却看不到，说的就是这一种。
+ *
+ * 这里把两种情形合起来：有生效订阅以订阅为准，只有绑定就退回绑定的那一档，
+ * subscription 为 null 表示「绑了套餐，还没有周期额度」。
+ */
+export type PanelPlanState = {
+  plan: PanelPlan;
+  subscription: Omit<PanelCurrentPlan, "plan"> | null;
+};
+
+/**
+ * boundPlanId 传 GET /user/me 的 plan_id，不要用 /user/plans 的 default_plan_id ——
+ * 后者在用户没绑套餐时会退到按量付费那一档，拿来当「已绑定」用会认错。
+ */
+export function resolvePanelPlan(
+  data: PanelPlans,
+  boundPlanId: number | null | undefined,
+): PanelPlanState | null {
+  if (data.current) {
+    const { plan, ...rest } = data.current;
+    return { plan, subscription: rest };
+  }
+  if (boundPlanId === null || boundPlanId === undefined) return null;
+  // 绑的那一档已经下架时不在在售列表里，这里取不到，只能照旧不显示
+  const bound = data.plans.find(plan => plan.id === boundPlanId);
+  return bound ? { plan: bound, subscription: null } : null;
+}

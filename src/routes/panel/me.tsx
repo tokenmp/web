@@ -24,6 +24,7 @@ import {
   emptyPlans,
   fetchMe,
   fetchPlans,
+  resolvePanelPlan,
   type PanelMe,
 } from "~/lib/user-panel";
 import { BUDGET_PERIOD_LABEL, formatDate, formatPoints, formatYuan } from "~/lib/utils";
@@ -60,7 +61,9 @@ function PanelMePage() {
   const accountRole = () => me.data()?.role ?? user()?.role;
   const accountCreatedAt = () => me.data()?.created_at ?? user()?.created_at;
 
-  const current = () => plans.data().current;
+  // 后台绑定的套餐（users.plan_id）与用户自助订阅（subscriptions 行）是两回事，
+  // 这里把两者合起来，只有绑定、没订阅时也能显示套餐名
+  const current = () => resolvePanelPlan(plans.data(), me.data()?.plan_id);
   const budget = () => me.data()?.budget;
   const budgetRate = () => {
     const value = budget();
@@ -68,7 +71,7 @@ function PanelMePage() {
     return value.used / value.amount;
   };
   const quotaRate = () => {
-    const value = current();
+    const value = current()?.subscription;
     if (!value || value.quota_limit <= 0) return 0;
     return value.quota_used / value.quota_limit;
   };
@@ -137,9 +140,14 @@ function PanelMePage() {
               when={current()}
               fallback={<Badge variant="secondary">未订阅套餐</Badge>}
             >
-              <Badge variant={planModeMeta(current()!.plan.mode).variant}>
-                {planModeMeta(current()!.plan.mode).label}中
-              </Badge>
+              <Show
+                when={current()!.subscription}
+                fallback={<Badge variant="outline">已绑定，未开通周期</Badge>}
+              >
+                <Badge variant={planModeMeta(current()!.plan.mode).variant}>
+                  {planModeMeta(current()!.plan.mode).label}中
+                </Badge>
+              </Show>
               <Badge variant="secondary">{current()!.plan.name}</Badge>
             </Show>
             <Show when={accountRole() === "admin"}>
@@ -202,7 +210,9 @@ function PanelMePage() {
               <h2 class="text-sm font-semibold">本周期额度</h2>
               <p class="mt-1 text-xs text-muted-foreground">
                 {current()
-                  ? `${current()!.plan.name} · 周期 ${formatDate(current()!.period_start)} – ${formatDate(current()!.period_end)}`
+                  ? current()!.subscription
+                    ? `${current()!.plan.name} · 周期 ${formatDate(current()!.subscription!.period_start)} – ${formatDate(current()!.subscription!.period_end)}`
+                    : `${current()!.plan.name} · 还没有开通周期`
                   : plans.loading() || plans.data().plans.length === 0
                     ? "正在读取当前订阅"
                     : "当前没有进行中的订阅"}
@@ -228,33 +238,44 @@ function PanelMePage() {
               </p>
             }
           >
-            <div class="mt-3 flex items-center justify-between text-sm">
-              <span class="text-muted-foreground">已用</span>
-              <span>
-                <DecimalSplit text={formatPoints(current()!.quota_used)} /> /{" "}
-                <DecimalSplit text={formatPoints(current()!.quota_limit)} />
-              </span>
-            </div>
-            <div
-              class="mt-2 h-2 overflow-hidden rounded-full bg-muted"
-              role="progressbar"
-              aria-valuenow={Math.round(quotaRate() * 100)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label="本周期额度用量"
+            <Show
+              when={current()!.subscription}
+              fallback={
+                <p class="mt-3 text-sm text-muted-foreground">
+                  后台已经给这个账号绑定了套餐，还没有开通周期。到套餐页订阅一档，就有周期额度可用。
+                </p>
+              }
             >
+              <div class="mt-3 flex items-center justify-between text-sm">
+                <span class="text-muted-foreground">已用</span>
+                <span>
+                  <DecimalSplit text={formatPoints(current()!.subscription!.quota_used)} /> /{" "}
+                  <DecimalSplit text={formatPoints(current()!.subscription!.quota_limit)} />
+                </span>
+              </div>
               <div
-                class="h-full rounded-full bg-primary"
-                style={{ width: `${Math.min(100, quotaRate() * 100)}%` }}
-              />
-            </div>
-            <p class="mt-2 text-xs text-muted-foreground">
-              本周期还可调用{" "}
-              <DecimalSplit
-                text={formatPoints(current()!.quota_limit - current()!.quota_used)}
-              />{" "}
-              积分 · 超出后按套餐超量策略处理
-            </p>
+                class="mt-2 h-2 overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-valuenow={Math.round(quotaRate() * 100)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="本周期额度用量"
+              >
+                <div
+                  class="h-full rounded-full bg-primary"
+                  style={{ width: `${Math.min(100, quotaRate() * 100)}%` }}
+                />
+              </div>
+              <p class="mt-2 text-xs text-muted-foreground">
+                本周期还可调用{" "}
+                <DecimalSplit
+                  text={formatPoints(
+                    current()!.subscription!.quota_limit - current()!.subscription!.quota_used,
+                  )}
+                />{" "}
+                积分 · 超出后按套餐超量策略处理
+              </p>
+            </Show>
           </Show>
         </Card>
 
