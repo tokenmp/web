@@ -45,6 +45,9 @@ export default function PanelRequestRecords() {
   const [status, setStatus] = createSignal<StatusFilter>("all");
   const [page, setPage] = createSignal(1);
   const [pageSize, setPageSize] = createSignal(PAGE_SIZE);
+  /** 当前看详情的那一条。抽屉放在页面这一层，不放在表格里：手机端的操作面板一关，
+      嵌在它里面的抽屉会跟着卸载 */
+  const [detail, setDetail] = createSignal<RequestRecord | null>(null);
 
   const hasFilter = () => keyword().trim() !== "" || model() !== "all" || status() !== "all";
 
@@ -193,14 +196,9 @@ export default function PanelRequestRecords() {
             </Badge>
           )}
           actions={record => (
-            <Sheet
-              trigger="请求详情"
-              title={record.model ?? "未知模型"}
-              description={`${record.channel ?? "未知渠道"} · ${formatDateTime(record.created_at)}`}
-              footer={<SheetClose>关闭</SheetClose>}
-            >
-              <RecordDetail record={record} />
-            </Sheet>
+            <Button variant="outline" onClick={() => setDetail(record)}>
+              请求详情
+            </Button>
           )}
           empty={hasFilter() ? "没有匹配的记录" : "暂无请求记录"}
           emptyDescription={hasFilter() ? "试试调整搜索词或筛选条件" : "还没有产生过 API 调用"}
@@ -217,6 +215,20 @@ export default function PanelRequestRecords() {
           }}
         />
       </Card>
+
+      <Sheet
+        open={detail() !== null}
+        onOpenChange={open => !open && setDetail(null)}
+        title={detail()?.model ?? "未知模型"}
+        description={
+          detail()
+            ? `${detail()!.channel ?? "未知渠道"} · ${formatDateTime(detail()!.created_at)}`
+            : undefined
+        }
+        footer={<SheetClose>关闭</SheetClose>}
+      >
+        <Show when={detail()}>{record => <RecordDetail record={record()} />}</Show>
+      </Sheet>
     </>
   );
 }

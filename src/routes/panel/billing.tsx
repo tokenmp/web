@@ -55,6 +55,9 @@ export default function PanelBilling() {
   const [charge, setCharge] = createSignal<ChargeFilter>("all");
   const [page, setPage] = createSignal(1);
   const [pageSize, setPageSize] = createSignal(PAGE_SIZE);
+  /** 当前看详情的那一条。抽屉放在页面这一层，不放在表格里：手机端的操作面板一关，
+      嵌在它里面的抽屉会跟着卸载 */
+  const [detail, setDetail] = createSignal<BillingRecord | null>(null);
 
   const hasFilter = () =>
     keyword().trim() !== "" || model() !== "all" || status() !== "all" || charge() !== "all";
@@ -227,14 +230,9 @@ export default function PanelBilling() {
             </span>
           )}
           actions={record => (
-            <Sheet
-              trigger="流水详情"
-              title={record.model ?? "未知模型"}
-              description={`${record.request_id} · ${formatDateTime(record.created_at)}`}
-              footer={<SheetClose>关闭</SheetClose>}
-            >
-              <BillingDetail record={record} />
-            </Sheet>
+            <Button variant="outline" onClick={() => setDetail(record)}>
+              流水详情
+            </Button>
           )}
           empty={hasFilter() ? "没有匹配的记录" : "暂无流水"}
           emptyDescription={hasFilter() ? "试试调整搜索词或筛选条件" : "还没有产生计费记录"}
@@ -258,6 +256,18 @@ export default function PanelBilling() {
           />
         </div>
       </Card>
+
+      <Sheet
+        open={detail() !== null}
+        onOpenChange={open => !open && setDetail(null)}
+        title={detail()?.model ?? "未知模型"}
+        description={
+          detail() ? `${detail()!.request_id} · ${formatDateTime(detail()!.created_at)}` : undefined
+        }
+        footer={<SheetClose>关闭</SheetClose>}
+      >
+        <Show when={detail()}>{record => <BillingDetail record={record()} />}</Show>
+      </Sheet>
     </>
   );
 }
