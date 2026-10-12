@@ -17,7 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { Toolbar, ToolbarDivider, ToolbarSpacer } from "~/components/ui/toolbar";
+import { Toolbar, ToolbarDivider } from "~/components/ui/toolbar";
 import { billingStatusMeta } from "~/lib/panel-labels";
 import { createClientResource } from "~/lib/resource";
 import { getAdminBillingRecords, type BillingRecord } from "~/lib/usage";
@@ -133,9 +133,10 @@ export default function DashboardBilling() {
             ariaLabel="流水状态"
           />
 
-          <ToolbarSpacer />
-
-          <Button variant="outline">
+          {/* 手机上一行塞不下两组分段，导出按钮会单独落到下一行。用 ml-auto 而不是
+              ToolbarSpacer：后者只是一个 0 宽的占位块，它先被放到上一行之后，
+              就没有空的宽度留给落到下一行的按钮了。 */}
+          <Button variant="outline" class="ml-auto">
             <Download class="size-4" aria-hidden="true" />
             导出 CSV
           </Button>

@@ -25,9 +25,16 @@ export function Toolbar(props: { children?: JSX.Element; class?: string }) {
   );
 }
 
-/** 把后面的控件推到右边。手机上不渲染，否则会撑出一行空白 */
+/**
+ * 把后面的控件推到右边。
+ *
+ * 手机上也要渲染。原来写成 `hidden sm:block`，理由是怕撑出一行空白，但它的
+ * `flex-basis` 是 0，只会占当前那一行剩下的宽度，自己不会换行。藏起来之后，
+ * 换行后的那一行左边对齐，右边空出一块 —— 面板密钥页在 390px 下按钮右边空了
+ * 29px，跟表头、分页条的 16px 对不上。
+ */
 export function ToolbarSpacer() {
-  return <div class="hidden min-w-0 flex-1 sm:block" aria-hidden="true" />;
+  return <div class="min-w-0 flex-1" aria-hidden="true" />;
 }
 
 /** 两组筛选之间的竖分隔线。用比分隔线深一档的 --input，浅色下也看得见 */
