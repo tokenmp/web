@@ -276,8 +276,8 @@ export default function DashboardUsers() {
           <Select
             label="排序"
             labelPlacement="inline"
-            // 手机上收窄一档，让刷新按钮能跟排序挤在同一行
-            class="w-32 sm:w-[8.5rem]"
+            // 手机上收窄一档，让刷新按钮能跟排序挤在同一行（390px 下正好差 2px）
+            class="w-[7.25rem] sm:w-[8.5rem]"
             options={SORT_OPTIONS}
             value={sort()}
             onChange={value => {
