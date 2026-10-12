@@ -573,6 +573,43 @@ components:
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
+    ApiKeyLookup:
+      type: object
+      description: |
+        本机新增。转发内核校验客户端密钥的结果：密钥归属的用户与密钥本身、要拿去限流
+        与选路的字段，以及该用户当前套餐的计价口径。
+      required: [user_id, api_key_id, model_whitelist, rate_limit_per_min, expires_at, pricing]
+      properties:
+        user_id: { type: integer, format: int64 }
+        api_key_id: { type: integer, format: int64 }
+        model_whitelist:
+          type: [array, "null"]
+          description: 空表示不限制模型
+          items: { type: string }
+        rate_limit_per_min: { type: [integer, "null"], description: 空表示不限速 }
+        expires_at: { type: [string, "null"], format: date-time, description: 空表示永不过期 }
+        pricing:
+          type: object
+          required: [plan_id, pricing_mode, markup_multiplier, prices]
+          properties:
+            plan_id: { type: [integer, "null"], format: int64, description: 空表示该用户没有套餐 }
+            pricing_mode: { type: [string, "null"], enum: [markup, table, null] }
+            markup_multiplier: { type: [number, "null"], description: 只有 markup 模式用得上 }
+            prices:
+              type: array
+              description: table 模式给该套餐的全部模型价；markup 模式与没有套餐时是空数组
+              items:
+                type: object
+                properties:
+                  model: { type: string }
+                  cost_mode: { type: string, enum: [token, request] }
+                  input_per_million: { type: number }
+                  output_per_million: { type: number }
+                  cache_read_per_million: { type: number }
+                  cache_write_per_million: { type: number }
+                  per_request: { type: number }
+                  request_weight: { type: number }
+
     ChannelGroup:
       description: 渠道分组。上游密钥是 `json:"-"`，任何响应都不回显
       allOf:
@@ -1381,6 +1418,58 @@ paths:
                       inserted: { type: integer }
                       skipped: { type: integer }
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /internal/api-key:
+    post:
+      operationId: postInternalApiKey
+      tags: [Internal]
+      summary: 校验客户端密钥，返回身份与计价口径
+      description: |
+        本机新增。转发内核在转发路径上调它（按密钥缓存，每个缓存周期一次），
+        输入客户端密钥明文，拿回这次调用算在谁头上、要不要拦，以及收多少钱的口径。
+
+        密钥明文只放请求体，不放 URL。按 sha256 查一次唯一索引 `uk_api_keys_hash`，
+        不走 bcrypt —— 这条路径在转发链路上，每条请求至少一次。
+
+        鉴权用 `x-callback-secret`（环境变量 RECORDS_CALLBACK_SECRET，与记录摄入同一把）。
+        失败分开回：密钥不存在 404、密钥或账号停用 403、密钥过期 410。
+
+        没有套餐的用户：`plan_id`、`pricing_mode`、`markup_multiplier` 都是 null，
+        `prices` 是空数组，内核据此只推用量、不算钱。`table` 模式给该套餐的全部
+        模型价，`markup` 模式 `prices` 是空数组。上游成本单价不在这个响应里。
+      x-implemented: local
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key: { type: string, description: 客户端密钥明文 }
+      responses:
+        "200":
+          description: 身份、限流白名单与计价口径
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/DataEnvelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ApiKeyLookup" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410":
+          description: 密钥已过期
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                error: { code: key_expired, message: 密钥已过期 }
 
   /admin/recharge:
     get:
