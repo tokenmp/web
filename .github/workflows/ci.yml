@@ -1,0 +1,69 @@
+name: CI
+
+# 旧仓库从来没有自动校验过 —— 78 条 issue 的改动全靠人肉跑。
+# 这里把能自动化的三件事串起来：类型检查、测试、生产构建。
+# 顺序按「先便宜后贵」排：类型检查几秒钟，构建要几分钟，前面断了就不浪费后面。
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+# 同一分支连推几次时，把前一次还没跑完的取消掉，别占着队列
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    # tests/api.test.ts 直接调路由 handler，要连真库，所以起一个 service 容器。
+    # 注意：service 容器**不会**执行 docker-entrypoint-initdb.d（那是 docker run 的
+    # 入口脚本干的），建表得自己来 —— 下一步的 bun scripts/ci-init-db.ts 就是干这个的。
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root
+          MYSQL_DATABASE: tokenmp
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-root --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=20s
+
+    env:
+      # 与 compose 里那个库同构：utf8mb4、UTC。排序规则与服务端一致，中文种子数据的
+      # 比较行为才和本地一样。
+      DATABASE_URL: mysql://root:ci-root@127.0.0.1:3306/tokenmp?charset=utf8mb4
+      # 两个密钥写死：会话是无状态 JWT，测试自己签，连库不用密码。
+      SESSION_SECRET: ci-session-secret-not-for-production-use
+      RECORDS_CALLBACK_SECRET: ci-records-secret
+      RECHARGE_CALLBACK_SECRET: ci-recharge-secret
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # 版本跟 .bun-version 走（本地是 1.4.2）
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - run: bun install --frozen-lockfile
+
+      - name: 类型检查
+        run: bun run typecheck
+
+      - name: 建库（service 容器不会自己建表）
+        run: bun scripts/ci-init-db.ts
+
+      - name: 测试
+        run: bun test
+
+      - name: 生产构建
+        run: bun run build

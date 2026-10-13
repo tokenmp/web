@@ -1,5 +1,14 @@
 -- 用户表。
 --
+-- 开头三句 SET 不能删、也不能挪到别的文件里：docker-entrypoint 是**一个文件起一次
+-- mysql 客户端**，每次都是新会话。客户端字符集取自容器 locale，mysql 镜像默认没有
+-- LANG，于是按 latin1 解释文件字节 —— 中文种子数据被双重编码后存进库（肉眼看是乱码，
+-- HEX 与 utf8mb4 也对不上）。显式指定就不看容器的脸色，谁跑都一样。
+-- 代价是每个 .sql 都得带一份；这四句必须留在各自文件的第一行（注释可以跟在后面）。
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
+SET collation_connection = 'utf8mb4_0900_ai_ci';
+--
 -- 字段对齐线上 mysql `sales`.`users`，只在末尾加了一个 source 列，
 -- 用来标记这条记录是从哪套线上系统导入的（线上有两套用户表：
 -- mysql sales 里的 1 个控制台管理员，postgres tokenmp_next 里的 261 个用户端用户）。

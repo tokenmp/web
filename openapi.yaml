@@ -12,7 +12,7 @@ info:
 
     1. **线上后端**（Go + echo + MySQL），部署在 `https://tokenmp.top`。它是接口的权威定义，
        路径与字段都取自线上源码，不是推测。
-    2. **本机实现**（SolidStart），已落地的有：认证、系统版本与公告通知，以及用户管理、
+    2. **本机实现**（SolidStart），已实现的有：认证、系统版本与公告通知，以及用户管理、
        余额账本（含管理员代充）、API 密钥、套餐定价、订阅续费这几组业务接口，跑在
        `http://localhost:6789`。转发产生的用量与调用日志不在本机后端，等网关回写。
        本地实现与线上有意不一致的地方见下面「两处差异」与「本机扩展」。
@@ -66,13 +66,13 @@ info:
     | `GET /admin/plans` | `subscribers`、查询参数 `status` | `subscribers` 是现算的活跃订阅用户数；`status=all` 连已软删的套餐一起回 |
     | `PlanActivationEvent.amount` | 符号 | 订阅是扣款（流水 `delta` 为负），这里回正数，读作「这次订阅花了多少」 |
 
-    标注说明：本机已实现的端点带 `x-implemented: local`，只存在于线上的标 `x-implemented: remote`。
+    标注说明：`x-implemented` 有三个取值 —— `local` 本机已实现且线上也有，`local-only` 只有本机有、线上没有（系统那组：版本、公告、通知），`remote` 只存在于线上。
 
 servers:
   - url: https://tokenmp.top
     description: 线上后端（Go + echo），接口定义以它为准
   - url: http://localhost:6789
-    description: 本机 SolidStart 后端，认证、系统消息、用户与账本、密钥、套餐这几组已落地
+    description: 本机 SolidStart 后端，认证、系统消息、用户与账本、密钥、套餐这几组已实现
 
 # 默认要鉴权。公开端点（/auth/login、/healthz 等）各自写了 security: [] 覆盖掉。
 security:

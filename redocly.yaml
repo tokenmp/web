@@ -1,5 +1,5 @@
 # 校验 openapi.yaml 用的配置。
-# 跑法：with-proxy bunx @redocly/cli lint openapi.yaml
+# 跑法：bunx @redocly/cli lint openapi.yaml
 
 extends:
   - recommended

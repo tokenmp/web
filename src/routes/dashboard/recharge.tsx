@@ -92,7 +92,7 @@ function AdminRecharge() {
         page: page(),
         size: size(),
         user_id: userId().trim() || undefined,
-        status: status() === "all" ? undefined : status(),
+        status: status() === "all" ? undefined : (status() as RechargeStatus),
         channel: channel().trim() || undefined,
         start: toIso(start()),
         end: toIso(end()),

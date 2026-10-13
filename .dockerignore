@@ -1,0 +1,16 @@
+# 构建镜像时不要把本机的这些带进去
+node_modules/
+.output/
+.vinxi/
+.nitro/
+dist/
+.git/
+.gitignore
+.env
+.env.*
+!.env.example
+.pi/
+tests/
+docs/
+*.md
+docker-compose.yml

@@ -1,7 +1,10 @@
 # TokenMP 销售控制台功能缺口清单
 
 > 这一份是首轮排查的结果。之后已按它开了 13 条 issue（#20 到 #32）并做掉了一轮，
-> 已完成的部分见下面「已完成」一节；本文件其余内容保留为当时的记录。
+> 做那一轮时又摸出 #34 到 #38，最后又开了 #44、#45。
+> 本仓库现在共有 20 条 issue（#20–#38、#44、#45），**全部已关闭**。
+> 已完成的部分见下面「已完成」一节；本文件其余内容保留为当时的记录，
+> 其中的数字快照已按下文「现状」一节重新数过，不对的地方以那一节为准。
 
 ## 已完成（对照 issue）
 
@@ -32,7 +35,7 @@
 - **批量充值只作用于当前页**（#36）。已补 `POST /api/admin/balances/batch-adjust`，
   一个事务全成或全回滚，单次上限 200 条；界面可选「当前页」或「全部筛选结果」，超出自动分批。
   记账前按 `user_id` 升序加锁，避开并发批量的 1213 死锁。
-- **三个数据层各自定义 `AdminUser` 与 `fetchAdminUsers`**（#37）。已收口到 `admin-users.ts` 一处，
+- **三个数据层各自定义 `AdminUser` 与 `fetchAdminUsers`**（#37）。已统一到 `admin-users.ts` 一处，
   另两个改为转发。（之前这里写成三个都有副本，实际 `admin-notifications.ts` 只是转发。）
 - **管理端看不到充值单列表**（#38）。已补 `GET /api/admin/recharge` 与 `/dashboard/recharge` 页，
   可按状态筛出挂着没到账的与回调失败的，`credit_transaction_id` 为空时打「未入账」标。
@@ -47,21 +50,50 @@
 
 ## 现状
 
-本机后端按 [接口定义](openapi.yaml) 落地了 47 个 `x-implemented: local` 端点，分六组：
+（本节数字为 2026-10-14 现数，来源是 `openapi.yaml` 里 `x-implemented` 标记的实际出现次数。
+数法是按行匹配 `^\s*x-implemented: (local|local-only|remote)$`：直接 `grep -c "x-implemented: local"`
+会把 `local-only` 和文件开头第 69 行的图例一起数进去，得到 72，是错的。）
 
-- 认证 4 个（注册、登录、登出、当前用户）
-- 系统 14 个（版本、公告、通知，以及管理端公告 CRUD 与通知投递）
-- 用户管理 10 个（`/admin/users` 的增删改查、预算、密钥、吊销）
-- 余额账本 2 个（`/admin/balances/adjust`、`/admin/adjust-logs`）
-- 套餐与订阅 10 个（`/admin/plans*`、`/admin/plan-activations*`）
-- 用户面板 7 个（`/user/api_keys*`、`/user/credits`、`/user/plans*`、`/user/me`）
+本机已实现的端点共 **71 个**，其中 56 个标 `local`、15 个标 `local-only`：
 
-另有 71 个 `x-implemented: remote` 端点只存在于线上（渠道、计费、概览、模型目录、共享账号、平台设置、网关）。
+- 认证 5 个（注册、登录、登出、当前用户、改密码）
+- 用户管理 12 个（`/admin/users` 的增删改查、预算、订阅、密钥签发与吊销）
+- 余额账本 3 个（`/admin/balances/adjust`、`/admin/balances/batch-adjust`、`/admin/adjust-logs`）
+- 套餐与订阅 14 个（`/admin/plans*`、`/admin/plan_prices/{id}`、`/admin/plan-activations*`、`/user/plans`、订阅与取消）
+- 内部端点 3 个（客户端密钥校验、记录摄入、充值回调）
+- 充值 3 个（`/user/recharge` 下单与查询、`/admin/recharge`）
+- 用户密钥 4 个（`/user/api_keys` 与 `/user/api_keys/{id}`）
+- 用量账单与概览 10 个（`/admin/dashboard`、`/admin/dashboard/summary`、`/admin/dashboard/usage`、`/admin/billing_records`、`/admin/request_records*`、`/user/usage`、`/user/billing_records`、`/user/request_records*`）
+- 用户面板其余 2 个（`/user/credits`、`/user/me`）
 
-前端有控制台十个页面与用户面板十个页面。真正调用后端的只有 [公告管理页](src/routes/dashboard/announcements.tsx)，
-加上三个布局组件的系统数据：[顶栏版本号](src/components/layout/app-shell.tsx)、
-[公告横幅](src/components/layout/announcement-banner.tsx)、[通知铃铛](src/components/layout/notification-bell.tsx)，
-以及登录注册页的认证接口。其余业务页面全部读内联常量或 [用户面板示例数据](src/lib/panel-data.ts)。
+15 个 `local-only` 全部是系统那组（版本、公告、通知，含管理端公告 CRUD 与通知投递），
+这些是本机自己长出来的、线上没有对应实现，所以既不是 `local` 也不是 `remote`。
+按接口前缀算它们带 `/api`，其余 56 个不带。
+
+另有 **61 个 `x-implemented: remote` 端点只存在于线上**，按路径前缀分：
+渠道与网关 28 个（`/admin/channel-groups*` 10、`/admin/gateway/*` 5、`/admin/channel-applications*` 3、
+`/admin/channel-accounts*` 2、`/admin/channels-consistency` 1、`/admin/upstream-models` 1、
+`/user/channel-applications*` 4、`/user/channel-groups/{id}` 1、`/user/account-groups` 1）、
+共享账号 9 个（`/user/accounts*` 6、`/admin/share-accounts*` 3）、
+模型目录与分成 9 个（`/admin/model-share-rates*` 3、`/admin/price-check/*` 3、`/admin/models*` 2、`/user/catalog` 1）、
+平台设置与错误规则 7 个（`/admin/error_rules*` 5、`/admin/platform-settings` 2）、
+计费与对账 3 个（`/admin/billing/*` 2、`/admin/billing_records` 1）、
+自动降级链 2 个（`/user/auto-chain`）、健康探针 2 个（`/healthz`、`/readyz`）、
+以及 `/auth/send-code` 1 个。
+
+（上面这几段的分组是本次按路径前缀手工归的，跟下面「三、B 类缺口」里那张「接口定义了但本机没实现」的
+表对得上，只是那张表按能力归类、这里按路径归类，两边数目不同是正常的。）
+
+前端现有控制台 12 个页面与用户面板 10 个页面。**其中 16 个已经在调真接口**，
+剩下 6 个（控制台渠道 [channels.tsx](src/routes/dashboard/channels.tsx)、
+[channel-groups.tsx](src/routes/dashboard/channel-groups.tsx)、
+[channel-applications.tsx](src/routes/dashboard/channel-applications.tsx)，
+用户面板 [accounts.tsx](src/routes/panel/accounts.tsx)、
+[channels.tsx](src/routes/panel/channels.tsx)、[models.tsx](src/routes/panel/models.tsx)）
+连本机后端都没有，页面是 `EmptyState` 占位，没有数据源。
+
+这一节的「现状」到这里就完整了。下面从「一、整体阻断项」开始，是首轮排查当时的记录
+（当时页面还全是写死的模拟数据），**已经全部过时**，保留下来只为对照当时是怎么判断的。
 
 ## 一、整体阻断项
 
@@ -105,7 +137,7 @@ README 第 251 行只数了这八页。剩下十一页连本机后端都没有�
 第二层阻断更靠底层：五个控制台页面与六个用户面板页面依赖 remote 端点，
 本机没有对应的表与路由。渠道没有表，用量与调用日志也没有（[03-business.sql](db/init/03-business.sql) 第 3 行写明
 「转发产生的用量与调用日志另有表，等网关那侧把数据送过来再建」）。
-这些页面即使接前端也拿不到数据，要等转发内核回写或本机补齐实现。
+这些页面即使接前端也拿不到数据，要等转发内核回写或本机实现。
 
 ## 二、A 类缺口：接口有、界面没接
 
@@ -246,7 +278,7 @@ README 第 251 行只数了这八页。剩下十一页连本机后端都没有�
 
 先接八个页面，把接口就绪的那部分变成可点。
 具体是控制台的用户、余额、套餐、API 密钥四页，与用户面板的密钥、积分、套餐、个人中心四页。
-理由：这四组接口是本机唯一完整落地又没接前端的部分，
+理由：这四组接口是本机唯一完整实现又没接前端的部分，
 按钮、弹窗、确认流程都已经做好，只差把数据源从常量换成 `fetch`。做完这步，控制台才第一次能改数据。
 
 然后补用户自助改密码，即本机实现 `POST /auth/password`。

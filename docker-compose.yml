@@ -3,8 +3,15 @@
 # 提供存放用户与登录会话的地方，让线上已有的用户拿原密码就能登录。
 #
 # 端口用 3307，避开本机 3306 上那个 tokenmp-demo-mysql 容器。
-# 起停：sudo docker compose up -d / sudo docker compose down
-# 重置：sudo docker compose down -v（会连数据卷一起删）
+# 起停：docker compose up -d / docker compose down
+# 重置：docker compose down -v（会连数据卷一起删）
+#
+# 默认只起 mysql，跟以前一样；web 服务放在 profiles 里，按需打开：
+#   docker compose up -d                      # 只有 mysql（日常开发）
+#   docker compose up -d --build web          # 另起一个 web 容器
+#
+# 本机的 web（bun run dev / bun run start）连的是 127.0.0.1:3307，
+# 不受这里有没有 web 服务影响。
 
 name: tokenmp-dev
 
@@ -35,6 +42,38 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+      start_period: 20s
+
+  # web 服务本身。默认不启动（profile: docker），要跑就显式点名：
+  #   docker compose --profile docker up -d --build
+  # 环境变量在 .env 里给同一份即可，DATABASE_URL 这里改成 compose 网络里的主机名 mysql
+  #（本机脚本用 127.0.0.1:3307，容器里走 3306，端口映射只对本机有意义）。
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tokenmp-dev-web
+    profiles: ["docker"]
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      # 覆盖 .env 里那份指向 127.0.0.1:3307 的连接串
+      DATABASE_URL: mysql://${MYSQL_USER:-tokenmp}:${MYSQL_PASSWORD:-tokenmp-dev}@mysql:3306/${MYSQL_DATABASE:-tokenmp}
+      # 生产镜像默认 NODE_ENV=production，于是这两把密钥必填（见 src/lib/callback-secret.ts）。
+      # 本地调试用固定值；真部署时从外面注入，不要写进这个文件。
+      SESSION_SECRET: ${SESSION_SECRET:?容器里必须给 SESSION_SECRET，可以在 .env 里放一个随机串}
+      RECORDS_CALLBACK_SECRET: ${RECORDS_CALLBACK_SECRET:-local-records-secret}
+      RECHARGE_CALLBACK_SECRET: ${RECHARGE_CALLBACK_SECRET:-local-dev-callback-secret}
+      PORT: "3000"
+    ports:
+      - "3100:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/api/system/version').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
       start_period: 20s
 
 volumes:

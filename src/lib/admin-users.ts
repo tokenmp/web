@@ -146,9 +146,10 @@ export function fetchUsers(params: UserListParams) {
 /**
  * 兼容名。admin-keys.ts 里原来另写了一份同样的请求，现在只有这一个实现；
  * 密钥页与通知页的用户下拉走的就是它。与 fetchUsers 是同一件事，
- * 只是默认取第一页 100 条 —— 下拉要一次铺够选项。
+ * 只是默认取第一页 100 条 —— 下拉要一次铺够选项，调用处一般只给 keyword。
+ * 参数收 Partial：page 与 size 这里都有默认值，调用处不必重复写。
  */
-export function fetchAdminUsers(params: UserListParams = { page: 1, size: 100 }) {
+export function fetchAdminUsers(params: Partial<UserListParams> = {}) {
   return fetchUsers({
     page: params.page ?? 1,
     size: params.size ?? 100,

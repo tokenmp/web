@@ -844,7 +844,7 @@ function AdjustLogsPanel() {
         size: size(),
         user_id: userId().trim() || undefined,
         operator: operator().trim() || undefined,
-        direction: direction() === "all" ? undefined : direction(),
+        direction: direction() === "all" ? undefined : (direction() as AdjustDirection),
         ref: ref().trim() || undefined,
         start: toIso(start()),
         end: toIso(end()),

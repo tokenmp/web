@@ -8,12 +8,16 @@
  * 所以启动前先查一遍：缺什么、错什么，当场说清楚再退出，不要让服务带病监听。
  * 挂成 package.json 的 prestart，`bun run start` 会自动先跑它。
  *
- *   bun scripts/check-env.ts
+ *   node scripts/check-env.ts
  *   SKIP_ENV_CHECK=1 bun run start     # 明确跳过（仅用于本地排查）
+ *
+ * 用 node 跑而不是 bun：容器里（Dockerfile 的运行段）只有 node，没有 bun。
  *
  * 生产上用 systemd 或容器注入环境变量时，这个检查同样有效 —— 它只看进程环境，
  * 不要求 .env 文件存在。
  */
+// 运行时用 bun 跑时 mysql2 从 node_modules 来；node 跑时也一样，所以这里不做动态加载。
+// 注意这一行是 prestart 依赖 node_modules 的唯一原因，Dockerfile 里为此专门装了一份 mysql2。
 import mysql from "mysql2/promise";
 
 const problems: string[] = [];
