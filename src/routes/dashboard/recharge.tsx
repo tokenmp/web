@@ -5,6 +5,7 @@ import { PageHeader, StatRow } from "~/components/layout/page-header";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
+import { ErrorState } from "~/components/ui/error-state";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { PagerIfNeeded } from "~/components/ui/pager";
@@ -170,7 +171,15 @@ function AdminRecharge() {
             ariaLabel="按充值单状态筛选"
           />
 
-          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* 用 <form> 而不是一串 button：运营在「用户 ID」里敲完回车就该查询，
+              这也是本仓其它筛选表单（通知页、各弹窗）的写法 */}
+          <form
+            class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+            onSubmit={event => {
+              event.preventDefault();
+              search();
+            }}
+          >
             <div class="space-y-1.5">
               <Label for="recharge-user">用户 ID</Label>
               <Input
@@ -209,21 +218,23 @@ function AdminRecharge() {
               />
             </div>
             <div class="flex items-end gap-2 lg:col-span-4">
-              <Button onClick={search}>查询</Button>
-              <Button variant="outline" onClick={reset}>
+              <Button type="submit">查询</Button>
+              {/* 在 <form> 里按钮默认是 submit，重置要显式写成 button，
+                  否则点一下既清空又立刻按清空后的条件查一次 */}
+              <Button type="button" variant="outline" onClick={reset}>
                 重置
               </Button>
             </div>
-          </div>
+          </form>
         </div>
 
         <Show when={orders.error()}>
-          <div class="border-b px-4 py-6 text-center text-sm">
-            <p class="text-muted-foreground">{orders.error()}</p>
-            <Button variant="outline" size="sm" class="mt-3" onClick={() => void orders.reload()}>
-              重新加载
-            </Button>
-          </div>
+          <ErrorState
+            variant="inline"
+            class="border-b px-4"
+            message={orders.error()!}
+            onRetry={() => void orders.reload()}
+          />
         </Show>
 
         <Table class="border-b" tableClass="min-w-[1040px]">
@@ -277,7 +288,11 @@ function AdminRecharge() {
             <Show when={orders.data().items.length === 0}>
               <TableRow>
                 <TableCell class="py-10 text-center text-muted-foreground" colSpan={7}>
-                  {orders.loading() ? "正在加载…" : "没有符合条件的充值单"}
+                  {orders.loading()
+                    ? "正在加载…"
+                    : orders.error()
+                      ? "充值单没取到"
+                      : "没有符合条件的充值单"}
                 </TableCell>
               </TableRow>
             </Show>

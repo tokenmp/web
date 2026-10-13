@@ -18,6 +18,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { Dialog } from "~/components/ui/dialog";
+import { ErrorState } from "~/components/ui/error-state";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Pager } from "~/components/ui/pager";
@@ -316,12 +317,12 @@ export default function DashboardUsers() {
         </Show>
 
         <Show when={users.error()}>
-          <div class="border-b px-4 py-6 text-center text-sm">
-            <p class="text-muted-foreground">{users.error()}</p>
-            <Button variant="outline" size="sm" class="mt-3" onClick={() => void users.reload()}>
-              重新加载
-            </Button>
-          </div>
+          <ErrorState
+            variant="inline"
+            class="border-b px-4"
+            message={users.error()!}
+            onRetry={() => void users.reload()}
+          />
         </Show>
 
         <Table class="border-b" tableClass="min-w-[1100px]">
@@ -564,12 +565,7 @@ function UserDetail(props: { user: UserView; plans: PlanOption[]; onChanged: () 
   return (
     <div class="space-y-6">
       <Show when={detail.error()}>
-        <div class="rounded-md border border-destructive/40 bg-destructive/10 p-3">
-          <p class="text-sm text-destructive-text">{detail.error()}</p>
-          <Button variant="outline" size="sm" class="mt-2" onClick={() => void detail.reload()}>
-            重新加载
-          </Button>
-        </div>
+        <ErrorState message={detail.error()!} onRetry={() => void detail.reload()} />
       </Show>
 
       <Show when={notice()}>
@@ -681,7 +677,14 @@ function UserDetail(props: { user: UserView; plans: PlanOption[]; onChanged: () 
 
       <Section title="API 密钥">
         <Show when={keys.error()}>
-          <p class="text-sm text-destructive-text">{keys.error()}</p>
+          {/* 取失败时下面那张表是空的：不把「还没有密钥」写出来，
+              否则用户会以为这个账号真的一把都没有 */}
+          <ErrorState
+            variant="inline"
+            class="rounded-md border border-destructive/30"
+            message={keys.error()!}
+            onRetry={() => void keys.reload()}
+          />
         </Show>
 
         <div class="divide-y rounded-md border">
@@ -689,7 +692,7 @@ function UserDetail(props: { user: UserView; plans: PlanOption[]; onChanged: () 
             each={keys.data()}
             fallback={
               <p class="p-3 text-sm text-muted-foreground">
-                {keys.loading() ? "正在加载…" : "还没有密钥，签发一把才能调用模型"}
+                {keys.loading() ? "正在加载…" : keys.error() ? "密钥没取到" : "还没有密钥，签发一把才能调用模型"}
               </p>
             }
           >
@@ -756,12 +759,15 @@ function UserDetail(props: { user: UserView; plans: PlanOption[]; onChanged: () 
         }}
       />
 
-      {/* 明文密钥只在这里出现一次，关掉就只剩前后缀 */}
+      {/* 明文密钥只在这里出现一次，关掉就只剩前后缀。
+          所以点遮罩、按 Esc 都不关：必须走「复制」或「我已保存」这两个动作，
+          否则手滑一下这份明文就没了 */}
       <Dialog
         open={created() !== null}
         onOpenChange={open => {
           if (!open) setCreated(null);
         }}
+        dismissible={false}
         title="密钥已签发"
         description="明文只展示这一次，后端只存哈希，关掉就再也拿不回来。"
         footer={

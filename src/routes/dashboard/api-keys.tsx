@@ -12,6 +12,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { Dialog } from "~/components/ui/dialog";
+import { ErrorState } from "~/components/ui/error-state";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Select } from "~/components/ui/select";
@@ -242,29 +243,26 @@ export default function DashboardApiKeys() {
         </Show>
 
         <Show when={users.error()}>
-          <div class="border-b px-4 py-6 text-center text-sm">
-            <p class="text-muted-foreground">{users.error()}</p>
-            <Button variant="outline" size="sm" class="mt-3" onClick={() => void users.reload()}>
-              重新加载用户
-            </Button>
-          </div>
+          <ErrorState
+            variant="inline"
+            class="border-b px-4"
+            message={users.error()!}
+            retryLabel="重新加载用户"
+            onRetry={() => void users.reload()}
+          />
         </Show>
 
         <Show when={keysError()}>
-          <div class="border-b px-4 py-6 text-center text-sm">
-            <p class="text-muted-foreground">{keysError()}</p>
-            <Button
-              variant="outline"
-              size="sm"
-              class="mt-3"
-              onClick={() => {
-                const user = selected();
-                if (user) void loadKeys(user.id);
-              }}
-            >
-              重新加载密钥
-            </Button>
-          </div>
+          <ErrorState
+            variant="inline"
+            class="border-b px-4"
+            message={keysError()!}
+            retryLabel="重新加载密钥"
+            onRetry={() => {
+              const user = selected();
+              if (user) void loadKeys(user.id);
+            }}
+          />
         </Show>
 
         <Table class="border-b" tableClass="min-w-[1000px]">
@@ -422,11 +420,13 @@ export default function DashboardApiKeys() {
         }
       />
 
+      {/* 明文只出现这一次：遮罩与 Esc 都不关，必须显式点「我已经保存好了」 */}
       <Dialog
         open={issued() !== null}
         onOpenChange={open => {
           if (!open) setIssued(null);
         }}
+        dismissible={false}
         title="密钥已签发，请立刻保存"
         description="明文只在这一个弹窗里出现一次，关掉之后任何接口都取不回原文，只能删了重签。"
         footer={

@@ -7,6 +7,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { Dialog } from "~/components/ui/dialog";
+import { ErrorState } from "~/components/ui/error-state";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { PagerIfNeeded } from "~/components/ui/pager";
@@ -211,17 +212,12 @@ export default function DashboardBalances() {
           </Toolbar>
 
           <Show when={accounts.error()}>
-            <div class="border-b px-4 py-6 text-center text-sm">
-              <p class="text-muted-foreground">{accounts.error()}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                class="mt-3"
-                onClick={() => void accounts.reload()}
-              >
-                重新加载
-              </Button>
-            </div>
+            <ErrorState
+              variant="inline"
+              class="border-b px-4"
+              message={accounts.error()!}
+              onRetry={() => void accounts.reload()}
+            />
           </Show>
 
           <Table class="border-b" tableClass="min-w-[960px]">
@@ -477,6 +473,12 @@ function BalanceActionDialog(props: {
         const value = budgetEnabled() ? Number(budgetAmount()) : 0;
         if (!Number.isFinite(value) || value < 0) {
           setError("预算金额要是不小于 0 的数字");
+          return;
+        }
+        // 开关打开却留空金额时，Number("") 得 0，会被后端当成「清除预算」，
+        // 用户想启用反而把预算清掉了。这里挡住，与 users.tsx 里同一个接口的口径一致。
+        if (budgetEnabled() && value === 0) {
+          setError("启用预算时金额要大于 0；想清掉预算就关掉开关");
           return;
         }
         const saved = await setUserBudget(account.id, {
@@ -941,12 +943,12 @@ function AdjustLogsPanel() {
       </div>
 
       <Show when={logs.error()}>
-        <div class="border-b px-4 py-6 text-center text-sm">
-          <p class="text-muted-foreground">{logs.error()}</p>
-          <Button variant="outline" size="sm" class="mt-3" onClick={() => void logs.reload()}>
-            重新加载
-          </Button>
-        </div>
+        <ErrorState
+          variant="inline"
+          class="border-b px-4"
+          message={logs.error()!}
+          onRetry={() => void logs.reload()}
+        />
       </Show>
 
       <Table class="border-b" tableClass="min-w-[1000px]">

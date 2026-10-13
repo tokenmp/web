@@ -1,6 +1,4 @@
 import { Title } from "@solidjs/meta";
-import ChevronLeft from "lucide-solid/icons/chevron-left";
-import ChevronRight from "lucide-solid/icons/chevron-right";
 import Download from "lucide-solid/icons/download";
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 
@@ -8,6 +6,8 @@ import { StatRow } from "~/components/layout/page-header";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
+import { ErrorState } from "~/components/ui/error-state";
+import { PagerIfNeeded } from "~/components/ui/pager";
 import { Segmented } from "~/components/ui/segmented";
 import {
   Table,
@@ -92,14 +92,17 @@ export default function DashboardBilling() {
     return { revenue, cost, margin: revenue - cost };
   };
 
+  // 加载中不给 0：0 和「真的是 0 元」分不开，取数失败时更是直接误导
   const stats = () => [
-    { label: "本页收入", value: formatCurrency(pageTotals().revenue) },
-    { label: "本页成本", value: formatCurrency(pageTotals().cost) },
-    { label: "本页毛利", value: formatCurrency(pageTotals().margin) },
-    { label: "筛选结果", value: formatNumber(list.data().total), hint: "符合条件的总条数" },
+    { label: "本页收入", value: list.loading() ? "—" : formatCurrency(pageTotals().revenue) },
+    { label: "本页成本", value: list.loading() ? "—" : formatCurrency(pageTotals().cost) },
+    { label: "本页毛利", value: list.loading() ? "—" : formatCurrency(pageTotals().margin) },
+    {
+      label: "筛选结果",
+      value: list.loading() ? "—" : formatNumber(list.data().total),
+      hint: "符合条件的总条数",
+    },
   ];
-
-  const totalPages = () => Math.max(1, Math.ceil(list.data().total / SIZE));
 
   return (
     <>
@@ -143,9 +146,12 @@ export default function DashboardBilling() {
         </Toolbar>
 
         <Show when={list.error()}>
-          <p class="border-b bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
-            {list.error()}
-          </p>
+          <ErrorState
+            variant="inline"
+            class="border-b px-4"
+            message={list.error()!}
+            onRetry={() => void list.reload()}
+          />
         </Show>
 
         <Table class="border-b" tableClass="min-w-[880px]">
@@ -189,39 +195,19 @@ export default function DashboardBilling() {
             <Show when={list.data().items.length === 0}>
               <TableRow>
                 <TableCell class="py-10 text-center text-muted-foreground" colSpan={8}>
-                  这个时间范围下没有符合条件的流水
+                  {list.loading() ? "正在加载…" : "这个时间范围下没有符合条件的账单"}
                 </TableCell>
               </TableRow>
             </Show>
           </TableBody>
         </Table>
 
-        <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-muted-foreground">
-          <p aria-live="polite">
-            共 {formatNumber(list.data().total)} 条，当前第 {formatNumber(page())} /{" "}
-            {formatNumber(totalPages())} 页
-          </p>
-          <div class="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              disabled={page() <= 1}
-              aria-label="上一页"
-              onClick={() => setPage(current => Math.max(1, current - 1))}
-            >
-              <ChevronLeft class="size-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="下一页"
-              disabled={page() >= totalPages()}
-              onClick={() => setPage(current => Math.min(totalPages(), current + 1))}
-            >
-              <ChevronRight class="size-4" />
-            </Button>
-          </div>
-        </div>
+        <PagerIfNeeded
+          page={page()}
+          size={SIZE}
+          total={list.data().total}
+          onPageChange={setPage}
+        />
       </Card>
     </>
   );
