@@ -23,6 +23,13 @@ export type DialogProps = {
   /** 受控开合。不传时由内部 Trigger 自己管 */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /**
+   * 点遮罩与按 Esc 能不能关。默认能。
+   *
+   * 传 false 给「关了就拿不回来」的弹窗用 —— 明文密钥只展示一次，一次误点遮罩
+   * 就等于永久丢失。这种弹窗要关只能点里面的按钮。
+   */
+  dismissible?: boolean;
 };
 
 /** 放在底部操作区里的关闭按钮，能拿到 Dialog 的上下文 */
@@ -99,6 +106,14 @@ export function Dialog(props: DialogProps) {
         <KDialog.Content
           ref={el => {
             contentEl = el as HTMLElement;
+          }}
+          // Kobalte 的关闭只有「点遮罩」与「Esc」两条，这里一并拦掉。
+          // 不拦的话遮罩点击会直接走到页面的 onOpenChange(false)，弹窗就没了。
+          onPointerDownOutside={event => {
+            if (props.dismissible === false) event.preventDefault();
+          }}
+          onEscapeKeyDown={event => {
+            if (props.dismissible === false) event.preventDefault();
           }}
           class={cn(
             "animate-panel-fade-in fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md",
