@@ -12,7 +12,7 @@ info:
 
     1. **线上后端**（Go + echo + MySQL），部署在 `https://tokenmp.top`。它是接口的权威定义，
        路径与字段都取自线上源码，不是推测。
-    2. **本机实现**（SolidStart），已落地的有：认证、系统版本与公告通知，以及用户管理、
+    2. **本机实现**（SolidStart），已实现的有：认证、系统版本与公告通知，以及用户管理、
        余额账本（含管理员代充）、API 密钥、套餐定价、订阅续费这几组业务接口，跑在
        `http://localhost:6789`。转发产生的用量与调用日志不在本机后端，等网关回写。
        本地实现与线上有意不一致的地方见下面「两处差异」与「本机扩展」。
@@ -72,7 +72,7 @@ servers:
   - url: https://tokenmp.top
     description: 线上后端（Go + echo），接口定义以它为准
   - url: http://localhost:6789
-    description: 本机 SolidStart 后端，认证、系统消息、用户与账本、密钥、套餐这几组已落地
+    description: 本机 SolidStart 后端，认证、系统消息、用户与账本、密钥、套餐这几组已实现
 
 # 默认要鉴权。公开端点（/auth/login、/healthz 等）各自写了 security: [] 覆盖掉。
 security:
