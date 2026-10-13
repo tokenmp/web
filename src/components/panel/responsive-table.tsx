@@ -103,7 +103,12 @@ export function ResponsiveTable<T>(props: {  items: T[];
                   class="py-10 text-center text-muted-foreground"
                   colSpan={columns().length + (props.actions ? 1 : 0)}
                 >
-                  {props.empty}
+                  {/* 手机端那份走 EmptyState，title 与 description 都画。
+                      这边只画了 title，同一份空态在两个断点下文案不一致 */}
+                  <p>{props.empty}</p>
+                  <Show when={props.emptyDescription}>
+                    <p class="mt-1 text-xs">{props.emptyDescription}</p>
+                  </Show>
                 </TableCell>
               </TableRow>
             </Show>
