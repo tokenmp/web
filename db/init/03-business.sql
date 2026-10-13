@@ -1,3 +1,7 @@
+-- 见 01-schema.sql 开头对这三句的说明：每个 .sql 都是一个独立会话，字符集要各带一份。
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
+SET collation_connection = 'utf8mb4_0900_ai_ci';
 -- 业务表：余额账本、密钥、套餐、订阅。
 --
 -- 这一组只装业务数据 —— 管理员配置的、用户自己产生的。转发产生的用量与调用日志

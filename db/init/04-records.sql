@@ -1,3 +1,7 @@
+-- 见 01-schema.sql 开头对这三句的说明：每个 .sql 都是一个独立会话，字符集要各带一份。
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
+SET collation_connection = 'utf8mb4_0900_ai_ci';
 -- 记录表与充值单。
 --
 -- 两张记录表的字段照 openapi.yaml 的 RequestRecord 与 BillingRecord 抄，
