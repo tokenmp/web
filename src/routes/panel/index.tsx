@@ -102,7 +102,7 @@ export default function PanelOverview() {
 
   return (
     <>
-      <Title>概览 | TokenMP 用户面板</Title>
+      <Title>概览 | tokenmp web</Title>
 
       {/* 五格指标条：手机上两列，lg 往上铺成一行 */}
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border lg:grid-cols-5">

@@ -11,7 +11,7 @@ import { EmptyState } from "~/components/ui/empty-state";
 function DashboardChannelApplications() {
   return (
     <>
-      <Title>渠道申请 | TokenMP 销售控制台</Title>
+      <Title>渠道申请 | tokenmp web</Title>
       <EmptyState description="接口接上后这里会列出待处理的渠道申请" />
     </>
   );

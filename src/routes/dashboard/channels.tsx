@@ -11,7 +11,7 @@ import { EmptyState } from "~/components/ui/empty-state";
 function DashboardChannels() {
   return (
     <>
-      <Title>渠道 | TokenMP 销售控制台</Title>
+      <Title>渠道 | tokenmp web</Title>
       <EmptyState description="接口接上后这里会列出渠道、余额与成功率" />
     </>
   );

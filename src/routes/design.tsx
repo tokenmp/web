@@ -78,7 +78,7 @@ export default function DesignSystem() {
 
   return (
     <main class="min-h-dvh bg-background">
-      <Title>设计系统 | TokenMP 销售控制台</Title>
+      <Title>设计系统 | tokenmp web</Title>
 
       <header class="sticky top-0 z-20 border-b bg-background/95 backdrop-blur">
         <div class="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4 lg:px-6">

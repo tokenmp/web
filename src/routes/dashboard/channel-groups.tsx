@@ -11,7 +11,7 @@ import { EmptyState } from "~/components/ui/empty-state";
 function DashboardChannelGroups() {
   return (
     <>
-      <Title>渠道分组 | TokenMP 销售控制台</Title>
+      <Title>渠道分组 | tokenmp web</Title>
       <EmptyState description="接口接上后这里会列出渠道分组与分流策略" />
     </>
   );

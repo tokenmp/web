@@ -169,7 +169,7 @@ export default function DashboardBalances() {
 
   return (
     <>
-      <Title>余额 | TokenMP 销售控制台</Title>
+      <Title>余额 | tokenmp web</Title>
 
       <PageHeader>
         <Show when={tab() === "accounts"}>

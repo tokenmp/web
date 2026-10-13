@@ -103,7 +103,7 @@ export default function DashboardBilling() {
 
   return (
     <>
-      <Title>计费 | TokenMP 销售控制台</Title>
+      <Title>计费 | tokenmp web</Title>
 
 
       <StatRow items={stats()} />

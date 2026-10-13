@@ -162,7 +162,7 @@ export default function DashboardApiKeys() {
 
   return (
     <>
-      <Title>API 密钥 | TokenMP 销售控制台</Title>
+      <Title>API 密钥 | tokenmp web</Title>
 
       <PageHeader>
         <Button disabled={selected() === null} onClick={() => setIssueOpen(true)}>

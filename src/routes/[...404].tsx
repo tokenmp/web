@@ -15,7 +15,7 @@ export default function NotFound() {
   return (
     <AppShell nav={dashboardNav} fallbackTitle="页面不存在">
       <HttpStatusCode code={404} />
-      <Title>页面不存在 | TokenMP 销售控制台</Title>
+      <Title>页面不存在 | tokenmp web</Title>
 
       <div class="grid min-h-[55vh] place-items-center">
         <div class="max-w-sm text-center">

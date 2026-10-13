@@ -145,7 +145,7 @@ function AdminRecharge() {
 
   return (
     <>
-      <Title>充值 | TokenMP 销售控制台</Title>
+      <Title>充值 | tokenmp web</Title>
 
       <PageHeader>
         <Button variant="outline" onClick={() => void orders.reload()}>

@@ -11,7 +11,7 @@ import { EmptyState } from "~/components/ui/empty-state";
 function PanelAccounts() {
   return (
     <>
-      <Title>我的账号 | TokenMP 用户面板</Title>
+      <Title>我的账号 | tokenmp web</Title>
       <EmptyState description="接口接上后这里会列出你分享的账号与分成" />
     </>
   );

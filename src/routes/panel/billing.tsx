@@ -108,7 +108,7 @@ export default function PanelBilling() {
 
   return (
     <>
-      <Title>账单流水 | TokenMP 用户面板</Title>
+      <Title>账单流水 | tokenmp web</Title>
 
 
       <Card class="overflow-hidden">

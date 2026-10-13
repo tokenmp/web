@@ -239,7 +239,7 @@ export default function DashboardPlans() {
 
   return (
     <>
-      <Title>套餐 | TokenMP 销售控制台</Title>
+      <Title>套餐 | tokenmp web</Title>
 
       <PageHeader>
         <Switch checked={includeDeleted()} onChange={setIncludeDeleted} label="含已停用" />
