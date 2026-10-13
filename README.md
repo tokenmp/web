@@ -122,12 +122,6 @@ const res = await GET({ request } as never);
 这样不用一个用例起一次服务器，也不会和别的进程抢 6789。脚本结尾要写 `process.exit(0)`，
 否则 `db` 的连接池会让进程一直挂着。
 
-装依赖走本机的 mihomo 代理会快很多，直连 `registry.npmjs.org` 只有百来 KB/s。
-
-```bash
-with-proxy bun install
-```
-
 ## 构建
 
 ```bash
