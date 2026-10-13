@@ -134,7 +134,7 @@ export default function DashboardNotifications() {
 
   return (
     <>
-      <Title>通知投递 | TokenMP 销售控制台</Title>
+      <Title>通知投递 | tokenmp web</Title>
 
       <PageHeader>
         <Button onClick={() => setFormOpen(true)}>

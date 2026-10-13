@@ -113,7 +113,7 @@ function PanelMePage() {
 
   return (
     <>
-      <Title>个人中心 | TokenMP 用户面板</Title>
+      <Title>个人中心 | tokenmp web</Title>
 
 
       <div class="grid gap-4 lg:grid-cols-2">

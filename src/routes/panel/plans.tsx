@@ -112,7 +112,7 @@ export default function PanelPlans() {
 
   return (
     <>
-      <Title>套餐 | TokenMP 用户面板</Title>
+      <Title>套餐 | tokenmp web</Title>
 
       <PageHeader />
 

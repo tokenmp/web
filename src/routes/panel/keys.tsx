@@ -139,7 +139,7 @@ export default function PanelKeys() {
 
   return (
     <>
-      <Title>我的密钥 | TokenMP 用户面板</Title>
+      <Title>我的密钥 | tokenmp web</Title>
 
       <Show when={error()}>
         <p class="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">

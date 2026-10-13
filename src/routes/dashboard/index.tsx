@@ -81,7 +81,7 @@ export default function DashboardOverview() {
 
   return (
     <>
-      <Title>概览 | TokenMP 销售控制台</Title>
+      <Title>概览 | tokenmp web</Title>
 
       <div class="space-y-5">
         <Show when={error()}>

@@ -11,7 +11,7 @@ import { EmptyState } from "~/components/ui/empty-state";
 function PanelChannels() {
   return (
     <>
-      <Title>我的渠道 | TokenMP 用户面板</Title>
+      <Title>我的渠道 | tokenmp web</Title>
       <EmptyState description="接口接上后这里会列出渠道申请与渠道组" />
     </>
   );

@@ -91,7 +91,7 @@ export default function PanelRequestRecords() {
 
   return (
     <>
-      <Title>请求日志 | TokenMP 用户面板</Title>
+      <Title>请求日志 | tokenmp web</Title>
 
 
       <Card class="overflow-hidden">

@@ -239,7 +239,7 @@ export default function DashboardUsers() {
 
   return (
     <>
-      <Title>用户 | TokenMP 销售控制台</Title>
+      <Title>用户 | tokenmp web</Title>
 
       <PageHeader>
         <Button onClick={() => setCreateOpen(true)}>

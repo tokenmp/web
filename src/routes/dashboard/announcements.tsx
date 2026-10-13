@@ -147,7 +147,7 @@ export default function DashboardAnnouncements() {
 
   return (
     <>
-      <Title>公告 | TokenMP 销售控制台</Title>
+      <Title>公告 | tokenmp web</Title>
 
       <PageHeader>
         <Button onClick={() => openForm(null)}>

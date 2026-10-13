@@ -50,7 +50,7 @@ export default function LoginPage() {
 
   return (
     <main class="grid min-h-dvh place-items-center bg-muted px-6 py-10">
-      <Title>登录 | TokenMP 销售控制台</Title>
+      <Title>登录 | tokenmp web</Title>
 
       {/* 公告是公开接口，未登录也能看到「v0.1.0 正式发布」这类全站消息 */}
       <div class="w-full max-w-[380px] space-y-4">

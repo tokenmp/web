@@ -75,7 +75,7 @@ export default function PanelCredits() {
 
   return (
     <>
-      <Title>余额明细 | TokenMP 用户面板</Title>
+      <Title>余额明细 | tokenmp web</Title>
 
       <Show when={error()}>
         <p class="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">

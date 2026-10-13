@@ -12,7 +12,7 @@ import { EmptyState } from "~/components/ui/empty-state";
 function PanelModels() {
   return (
     <>
-      <Title>模型目录 | TokenMP 用户面板</Title>
+      <Title>模型目录 | tokenmp web</Title>
       <EmptyState description="接口接上后这里会列出可用模型与上游" />
     </>
   );

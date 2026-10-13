@@ -84,7 +84,7 @@ try {
 
   console.log("\n【1】登录页：分段切换与密码可见性");
   await page.goto(BASE, { waitUntil: "networkidle" });
-  is("页面标题", await page.title(), "登录 | TokenMP 销售控制台");
+  is("页面标题", await page.title(), "登录 | tokenmp web");
 
   const submit = page.locator('form button[type="submit"]');
   const emailInput = page.locator("#email");
