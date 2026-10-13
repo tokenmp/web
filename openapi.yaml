@@ -66,7 +66,7 @@ info:
     | `GET /admin/plans` | `subscribers`、查询参数 `status` | `subscribers` 是现算的活跃订阅用户数；`status=all` 连已软删的套餐一起回 |
     | `PlanActivationEvent.amount` | 符号 | 订阅是扣款（流水 `delta` 为负），这里回正数，读作「这次订阅花了多少」 |
 
-    标注说明：本机已实现的端点带 `x-implemented: local`，只存在于线上的标 `x-implemented: remote`。
+    标注说明：`x-implemented` 有三个取值 —— `local` 本机已实现且线上也有，`local-only` 只有本机有、线上没有（系统那组：版本、公告、通知），`remote` 只存在于线上。
 
 servers:
   - url: https://tokenmp.top
