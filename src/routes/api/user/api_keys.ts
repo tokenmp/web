@@ -9,21 +9,25 @@ import { apiKeys } from "~/lib/schema";
 import { checkInt32 } from "~/lib/validate";
 
 /** name 可选、最长 64；expires_at 可选，非法时间回 400 */
-function parseKeyInput(body: Record<string, unknown> | null) {
+type KeyInput = { name: string | null; expiresAt: Date | null } | { error: string };
+
+// 返回类型要显式写出来。靠 `as const` 推的话，两条 return 的联合在调用处
+// `"error" in input` 之后收不窄，`input.error` 会是 `string | undefined`。
+function parseKeyInput(body: Record<string, unknown> | null): KeyInput {
   let name: string | null = null;
   if (body?.name !== undefined && body?.name !== null) {
     name = String(body.name).trim() || null;
-    if (name && name.length > 64) return { error: "密钥名称不能超过 64 字" } as const;
+    if (name && name.length > 64) return { error: "密钥名称不能超过 64 字" };
   }
 
   let expiresAt: Date | null = null;
   if (body?.expires_at !== undefined && body?.expires_at !== null && String(body.expires_at) !== "") {
     const parsed = new Date(String(body.expires_at));
-    if (Number.isNaN(parsed.getTime())) return { error: "expires_at 不是合法时间" } as const;
+    if (Number.isNaN(parsed.getTime())) return { error: "expires_at 不是合法时间" };
     expiresAt = parsed;
   }
 
-  return { name, expiresAt } as const;
+  return { name, expiresAt };
 }
 
 /** GET /api/user/api_keys —— 只回自己那几把，且只给前后缀 */
