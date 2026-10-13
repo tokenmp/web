@@ -97,6 +97,8 @@ export default function DashboardAnnouncements() {
   const [formOpen, setFormOpen] = createSignal(false);
   const [editing, setEditing] = createSignal<Announcement | null>(null);
   const [pendingDelete, setPendingDelete] = createSignal<Announcement | null>(null);
+  /** 待确认发布的公告。归档不用确认：它是把公告从用户端撤下来，撤错了再发布一次就行 */
+  const [pendingPublish, setPendingPublish] = createSignal<Announcement | null>(null);
   const [busyId, setBusyId] = createSignal<number | null>(null);
   const [notice, setNotice] = createSignal("");
 
@@ -296,12 +298,9 @@ export default function DashboardAnnouncements() {
                             : `发布公告：${item.title}`
                         }
                         onClick={() =>
-                          run(
-                            item,
-                            item.status === "published"
-                              ? archiveAnnouncement
-                              : publishAnnouncement,
-                          )
+                          item.status === "published"
+                            ? run(item, archiveAnnouncement)
+                            : setPendingPublish(item)
                         }
                       >
                         {item.status === "published" ? (
@@ -366,6 +365,39 @@ export default function DashboardAnnouncements() {
         item={editing()}
         onOpenChange={setFormOpen}
         onSaved={() => void refresh()}
+      />
+
+      {/* 发布是面向全站用户的动作，点错就发出去了，所以先确认一次；
+          归档不确认 —— 它只是把公告从用户端撤下来 */}
+      <Dialog
+        open={pendingPublish() !== null}
+        onOpenChange={open => {
+          if (!open) setPendingPublish(null);
+        }}
+        title={pendingPublish()?.status === "archived" ? "重新发布这条公告？" : "发布这条公告？"}
+        description={
+          pendingPublish()?.status === "archived"
+            ? `「${pendingPublish()?.title ?? ""}」会重新出现在所有用户的公告条上，之前关掉它的用户也会再看到一次。`
+            : `「${pendingPublish()?.title ?? ""}」会立刻出现在所有用户的公告条上，要撤下来只能归档。`
+        }
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setPendingPublish(null)}>
+              取消
+            </Button>
+            <Button
+              disabled={busyId() === pendingPublish()?.id}
+              onClick={() => {
+                const item = pendingPublish();
+                if (!item) return;
+                setPendingPublish(null);
+                void run(item, publishAnnouncement);
+              }}
+            >
+              发布
+            </Button>
+          </>
+        }
       />
 
       <Dialog

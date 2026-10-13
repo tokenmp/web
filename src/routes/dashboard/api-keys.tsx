@@ -131,6 +131,9 @@ export default function DashboardApiKeys() {
     if (first) selectUser(first);
   });
 
+  /** 待确认停用的密钥。停用可逆，但会立刻打断对方正在跑的集成，值得先问一句 */
+  const [pendingDisable, setPendingDisable] = createSignal<AdminApiKey | null>(null);
+
   const run = async (key: AdminApiKey, action: () => Promise<unknown>, fallback: string) => {
     setBusyId(key.id);
     setNotice("");
@@ -320,13 +323,14 @@ export default function DashboardApiKeys() {
                         size="sm"
                         disabled={busyId() === key.id}
                         aria-label={`${key.status === 0 ? "启用" : "停用"}密钥：${key.name ?? maskedKey(key)}`}
-                        onClick={() =>
-                          run(
-                            key,
-                            () => updateApiKey(key.id, { status: key.status === 0 ? 1 : 0 }),
-                            "操作失败",
-                          )
-                        }
+                        onClick={() => {
+                          // 启用是恢复，直接做；停用会立刻打断对方的调用，先确认
+                          if (key.status === 0) {
+                            void run(key, () => updateApiKey(key.id, { status: 1 }), "操作失败");
+                          } else {
+                            setPendingDisable(key);
+                          }
+                        }}
                       >
                         {key.status === 0 ? "启用" : "停用"}
                       </Button>
@@ -395,6 +399,33 @@ export default function DashboardApiKeys() {
           setEditing(null);
           if (key) void loadKeys(key.user_id);
         }}
+      />
+
+      <Dialog
+        open={pendingDisable() !== null}
+        onOpenChange={open => {
+          if (!open) setPendingDisable(null);
+        }}
+        title="停用这把密钥？"
+        description={`「${pendingDisable()?.name ?? (pendingDisable() ? maskedKey(pendingDisable()!) : "")}」停用后立刻开始被网关拒掉，正在用它的集成会当场失败。密钥本身留着，随时能再启用。`}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setPendingDisable(null)}>
+              取消
+            </Button>
+            <Button
+              disabled={busyId() === pendingDisable()?.id}
+              onClick={() => {
+                const key = pendingDisable();
+                if (!key) return;
+                setPendingDisable(null);
+                void run(key, () => updateApiKey(key.id, { status: 0 }), "操作失败");
+              }}
+            >
+              确认停用
+            </Button>
+          </>
+        }
       />
 
       <Dialog

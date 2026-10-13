@@ -366,6 +366,8 @@ function NotificationForm(props: {
   const [idempotencyKey, setIdempotencyKey] = createSignal("");
   const [notice, setNotice] = createSignal("");
   const [pending, setPending] = createSignal(false);
+  /** 待确认的发送。批量发出去收不回来，先在弹窗里确认一次影响范围 */
+  const [confirming, setConfirming] = createSignal(false);
 
   // 每次打开重置，弹窗常驻页面里，不重置会残留上一条
   createEffect(() => {
@@ -383,6 +385,7 @@ function NotificationForm(props: {
     setIdempotencyKey("");
     setNotice("");
     setPending(false);
+    setConfirming(false);
   });
 
   const userOptions = createMemo(() =>
@@ -400,7 +403,12 @@ function NotificationForm(props: {
 
   const targets = () => (mode() === "single" ? (userId() ? 1 : 0) : batchIds().length);
 
-  const submit = async () => {
+  /**
+   * 校验通过之后先开确认弹窗，不在这里直接发。
+   * 批量发送面向一批用户、发出去收不回来，按钮上写着「发送给 N 个用户」
+   * 也不该等于点一下就发。
+   */
+  const submit = () => {
     if (pending()) return;
 
     if (!title().trim()) {
@@ -411,12 +419,17 @@ function NotificationForm(props: {
       setNotice("先选一个要接收通知的用户");
       return;
     }
-    const ids = batchIds();
-    if (mode() === "batch" && ids.length === 0) {
+    if (mode() === "batch" && batchIds().length === 0) {
       setNotice("批量发送要至少填一个用户 id");
       return;
     }
 
+    setNotice("");
+    setConfirming(true);
+  };
+
+  /** 确认之后真正发出去 */
+  const send = async () => {
     const input: NotificationInput = {
       title: title().trim(),
       type: type().trim() || undefined,
@@ -428,7 +441,7 @@ function NotificationForm(props: {
       idempotency_key: idempotencyKey().trim() || null,
     };
     if (mode() === "single") input.user_id = Number(userId());
-    else input.user_ids = ids;
+    else input.user_ids = batchIds();
 
     setPending(true);
     setNotice("");
@@ -443,189 +456,229 @@ function NotificationForm(props: {
   };
 
   return (
-    <Dialog
-      open={props.open}
-      onOpenChange={props.onOpenChange}
-      title="发通知"
-      description="只发给选中的用户，不写公告"
-      class="max-h-[calc(100dvh-2rem)] overflow-y-auto"
-      footer={
-        <>
-          <Button variant="outline" onClick={() => props.onOpenChange(false)}>
-            取消
-          </Button>
-          <Button disabled={pending()} onClick={() => void submit()}>
-            {pending()
-              ? "发送中…"
-              : targets() > 1
-                ? `发送给 ${formatNumber(targets())} 个用户`
-                : "发送"}
-          </Button>
-        </>
-      }
-    >
-      <form
-        class="space-y-4"
-        onSubmit={event => {
-          event.preventDefault();
-          void submit();
-        }}
+    <>
+      <Dialog
+        open={props.open}
+        onOpenChange={props.onOpenChange}
+        title="发通知"
+        description="只发给选中的用户，不写公告"
+        class="max-h-[calc(100dvh-2rem)] overflow-y-auto"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => props.onOpenChange(false)}>
+              取消
+            </Button>
+            <Button disabled={pending()} onClick={() => void submit()}>
+              {pending()
+                ? "发送中…"
+                : targets() > 1
+                  ? `发送给 ${formatNumber(targets())} 个用户`
+                  : "发送"}
+            </Button>
+          </>
+        }
       >
-        <div class="space-y-1.5">
-          <p class="text-sm font-medium">发送对象</p>
-          <Segmented
-            options={TARGET_OPTIONS}
-            value={mode()}
-            onChange={setMode}
-            ariaLabel="发送对象"
-          />
-        </div>
-
-        <Show
-          when={mode() === "single"}
-          fallback={
-            <div class="space-y-1.5">
-              <Label for="notification-batch">用户 ID 列表</Label>
-              <Textarea
-                id="notification-batch"
-                rows={3}
-                placeholder="例如：12, 34, 56（逗号或换行分隔）"
-                value={batchText()}
-                onInput={event => setBatchText(event.currentTarget.value)}
-              />
-              <p class="text-xs text-muted-foreground">
-                已识别 {formatNumber(batchIds().length)} 个 id
-                <Show when={batchUnknown().length > 0}>
-                  {" "}
-                  · 其中 {batchUnknown().join("、")} 不在用户列表里，接口会整批拒绝
-                </Show>
-              </p>
-            </div>
-          }
+        <form
+          class="space-y-4"
+          onSubmit={event => {
+            event.preventDefault();
+            void submit();
+          }}
         >
-          <Select
-            label="接收用户"
-            options={userOptions()}
-            value={userId()}
-            onChange={setUserId}
-            placeholder={
-              props.users.length === 0
-                ? props.usersError
-                  ? "用户列表没取到，改不了这一项"
-                  : "用户列表加载中…"
-                : "选择用户"
-            }
-            portal={false}
-          />
-        </Show>
-
-        <div class="grid gap-4 sm:grid-cols-2">
           <div class="space-y-1.5">
-            <Label for="notification-type">类型</Label>
-            <Input
-              id="notification-type"
-              maxLength={64}
-              placeholder="例如 balance_low"
-              value={type()}
-              onInput={event => setType(event.currentTarget.value)}
-            />
-          </div>
-
-          <div class="space-y-1.5">
-            <Label for="notification-severity">级别</Label>
+            <p class="text-sm font-medium">发送对象</p>
             <Segmented
-              options={SEVERITY_OPTIONS}
-              value={severity()}
-              onChange={setSeverity}
-              ariaLabel="通知级别"
+              options={TARGET_OPTIONS}
+              value={mode()}
+              onChange={setMode}
+              ariaLabel="发送对象"
             />
           </div>
-        </div>
 
-        <div class="space-y-1.5">
-          <Label for="notification-title">标题</Label>
-          <Input
-            id="notification-title"
-            maxLength={255}
-            placeholder="例如：余额不足，请及时充值"
-            value={title()}
-            onInput={event => setTitle(event.currentTarget.value)}
-          />
-        </div>
+          <Show
+            when={mode() === "single"}
+            fallback={
+              <div class="space-y-1.5">
+                <Label for="notification-batch">用户 ID 列表</Label>
+                <Textarea
+                  id="notification-batch"
+                  rows={3}
+                  placeholder="例如：12, 34, 56（逗号或换行分隔）"
+                  value={batchText()}
+                  onInput={event => setBatchText(event.currentTarget.value)}
+                />
+                <p class="text-xs text-muted-foreground">
+                  已识别 {formatNumber(batchIds().length)} 个 id
+                  <Show when={batchUnknown().length > 0}>
+                    {" "}
+                    · 其中 {batchUnknown().join("、")} 不在用户列表里，接口会整批拒绝
+                  </Show>
+                </p>
+              </div>
+            }
+          >
+            <Select
+              label="接收用户"
+              options={userOptions()}
+              value={userId()}
+              onChange={setUserId}
+              placeholder={
+                props.users.length === 0
+                  ? props.usersError
+                    ? "用户列表没取到，改不了这一项"
+                    : "用户列表加载中…"
+                  : "选择用户"
+              }
+              portal={false}
+            />
+          </Show>
 
-        <div class="space-y-1.5">
-          <Label for="notification-body">正文</Label>
-          <Textarea
-            id="notification-body"
-            rows={3}
-            placeholder="一句话说清发生了什么、用户需要做什么"
-            value={body()}
-            onInput={event => setBody(event.currentTarget.value)}
-          />
-        </div>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="space-y-1.5">
+              <Label for="notification-type">类型</Label>
+              <Input
+                id="notification-type"
+                maxLength={64}
+                placeholder="例如 balance_low"
+                value={type()}
+                onInput={event => setType(event.currentTarget.value)}
+              />
+            </div>
 
-        <div class="grid gap-4 sm:grid-cols-2">
+            <div class="space-y-1.5">
+              <Label for="notification-severity">级别</Label>
+              <Segmented
+                options={SEVERITY_OPTIONS}
+                value={severity()}
+                onChange={setSeverity}
+                ariaLabel="通知级别"
+              />
+            </div>
+          </div>
+
           <div class="space-y-1.5">
-            <Label for="notification-action-label">按钮文字</Label>
+            <Label for="notification-title">标题</Label>
             <Input
-              id="notification-action-label"
-              maxLength={128}
-              placeholder="例如：去充值"
-              value={actionLabel()}
-              onInput={event => setActionLabel(event.currentTarget.value)}
+              id="notification-title"
+              maxLength={255}
+              placeholder="例如：余额不足，请及时充值"
+              value={title()}
+              onInput={event => setTitle(event.currentTarget.value)}
             />
           </div>
 
           <div class="space-y-1.5">
-            <Label for="notification-action-url">按钮链接</Label>
-            <Input
-              id="notification-action-url"
-              maxLength={512}
-              placeholder="/panel/credits"
-              value={actionUrl()}
-              onInput={event => setActionUrl(event.currentTarget.value)}
+            <Label for="notification-body">正文</Label>
+            <Textarea
+              id="notification-body"
+              rows={3}
+              placeholder="一句话说清发生了什么、用户需要做什么"
+              value={body()}
+              onInput={event => setBody(event.currentTarget.value)}
             />
           </div>
-        </div>
 
-        <div class="grid gap-4 sm:grid-cols-2">
-          <div class="space-y-1.5">
-            <Label for="notification-expires">过期时间</Label>
-            <Input
-              id="notification-expires"
-              type="datetime-local"
-              value={expiresAt()}
-              onInput={event => setExpiresAt(event.currentTarget.value)}
-            />
-            <p class="text-xs text-muted-foreground">留空表示不过期</p>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="space-y-1.5">
+              <Label for="notification-action-label">按钮文字</Label>
+              <Input
+                id="notification-action-label"
+                maxLength={128}
+                placeholder="例如：去充值"
+                value={actionLabel()}
+                onInput={event => setActionLabel(event.currentTarget.value)}
+              />
+            </div>
+
+            <div class="space-y-1.5">
+              <Label for="notification-action-url">按钮链接</Label>
+              <Input
+                id="notification-action-url"
+                maxLength={512}
+                placeholder="/panel/credits"
+                value={actionUrl()}
+                onInput={event => setActionUrl(event.currentTarget.value)}
+              />
+            </div>
           </div>
 
-          <div class="space-y-1.5">
-            <Label for="notification-idempotency">幂等键</Label>
-            <Input
-              id="notification-idempotency"
-              maxLength={120}
-              placeholder="例如 balance_low:2026-07-01"
-              value={idempotencyKey()}
-              onInput={event => setIdempotencyKey(event.currentTarget.value)}
-            />
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="space-y-1.5">
+              <Label for="notification-expires">过期时间</Label>
+              <Input
+                id="notification-expires"
+                type="datetime-local"
+                value={expiresAt()}
+                onInput={event => setExpiresAt(event.currentTarget.value)}
+              />
+              <p class="text-xs text-muted-foreground">留空表示不过期</p>
+            </div>
+
+            <div class="space-y-1.5">
+              <Label for="notification-idempotency">幂等键</Label>
+              <Input
+                id="notification-idempotency"
+                maxLength={120}
+                placeholder="例如 balance_low:2026-07-01"
+                value={idempotencyKey()}
+                onInput={event => setIdempotencyKey(event.currentTarget.value)}
+              />
+            </div>
           </div>
-        </div>
 
-        <p class="rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
-          填了幂等键就按它去重：同一个业务事件重复提交只落一条，适合「余额不足」这种每天都会触发的事件。
-          批量发送时服务端会在键后接上用户 id（
-          <span class="font-mono">balance_low:2026-07-01:12</span>
-          ），每个用户各一条，所以批量场景下不要指望一个键全站只发一次。
-          不填键则每点一次都真的多一条，别连点两次。
-        </p>
-
-        <Show when={notice()}>
-          <p class="text-sm text-destructive-text" role="alert">
-            {notice()}
+          <p class="rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
+            填了幂等键就按它去重：同一个业务事件重复提交只落一条，适合「余额不足」这种每天都会触发的事件。
+            批量发送时服务端会在键后接上用户 id（
+            <span class="font-mono">balance_low:2026-07-01:12</span>
+            ），每个用户各一条，所以批量场景下不要指望一个键全站只发一次。
+            不填键则每点一次都真的多一条，别连点两次。
           </p>
-        </Show>
-      </form>
-    </Dialog>
+
+          <Show when={notice()}>
+            <p class="text-sm text-destructive-text" role="alert">
+              {notice()}
+            </p>
+          </Show>
+        </form>
+      </Dialog>
+
+      {/* 发送前的确认。与表单分开一个弹窗：这里只放影响范围和那一次点击 */}
+      <Dialog
+        open={confirming()}
+        onOpenChange={open => {
+          if (!open && !pending()) setConfirming(false);
+        }}
+        title={targets() > 1 ? `发给 ${formatNumber(targets())} 个用户？` : "发出这条通知？"}
+        description="通知发出去收不回来，只能等它过期或者用户自己关掉。"
+        footer={
+          <>
+            <Button variant="outline" disabled={pending()} onClick={() => setConfirming(false)}>
+              再改改
+            </Button>
+            <Button
+              disabled={pending()}
+              onClick={() => {
+                setConfirming(false);
+                void send();
+              }}
+            >
+              {pending() ? "发送中…" : "确认发送"}
+            </Button>
+          </>
+        }
+      >
+        <div class="space-y-2 text-sm">
+          <p class="font-medium">{title().trim()}</p>
+          <Show when={body().trim()}>
+            <p class="text-muted-foreground">{body().trim()}</p>
+          </Show>
+          <p class="text-xs text-muted-foreground">
+            {targets() > 1
+              ? `接收人：${formatNumber(targets())} 个用户（按 id 批量）`
+              : "接收人：1 个用户"}
+          </p>
+        </div>
+      </Dialog>
+    </>
   );
 }

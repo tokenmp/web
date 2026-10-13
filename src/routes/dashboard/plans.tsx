@@ -914,6 +914,10 @@ function PlanDetailDialog(props: {
   const [loading, setLoading] = createSignal(false);
   const [notice, setNotice] = createSignal("");
   const [deletingId, setDeletingId] = createSignal<number | null>(null);
+  /** 待确认删除的模型价。删了就没了，不能撤销 */
+  const [pendingPrice, setPendingPrice] = createSignal<PlanPrice | null>(null);
+  /** 加价撞 409 时把冲突的模型名记下来，上面那张表据此把那一行标出来 */
+  const [duplicateModel, setDuplicateModel] = createSignal("");
 
   const load = async (id: number) => {
     setLoading(true);
@@ -932,6 +936,7 @@ function PlanDetailDialog(props: {
     const id = props.planId;
     setDetail(null);
     setNotice("");
+    setDuplicateModel("");
     if (id !== null) void load(id);
   });
 
@@ -951,10 +956,11 @@ function PlanDetailDialog(props: {
   };
 
   return (
-    <Dialog
-      open={props.open}
-      onOpenChange={props.onOpenChange}
-      title={detail()?.plan.name ?? "套餐详情"}
+    <>
+      <Dialog
+        open={props.open}
+        onOpenChange={props.onOpenChange}
+        title={detail()?.plan.name ?? "套餐详情"}
       description="模型价只对定价方式为「逐模型定价」的套餐生效"
       class="max-h-[calc(100dvh-2rem)] max-w-3xl overflow-y-auto"
       footer={
@@ -1070,7 +1076,7 @@ function PlanDetailDialog(props: {
                     <TableBody>
                       <For each={current().prices}>
                         {price => (
-                          <TableRow>
+                          <TableRow class={duplicateModel() === price.model ? "bg-warning/10" : undefined}>
                             <TableCell class="font-medium">{price.model}</TableCell>
                             <TableCell class="text-muted-foreground">
                               {COST_MODE_LABELS[price.cost_mode] ?? price.cost_mode}
@@ -1100,7 +1106,7 @@ function PlanDetailDialog(props: {
                                 class="text-destructive-text"
                                 disabled={deletingId() === price.id}
                                 aria-label={`删除 ${price.model} 的定价`}
-                                onClick={() => void removePrice(price)}
+                                onClick={() => setPendingPrice(price)}
                               >
                                 <Trash class="size-3.5" aria-hidden="true" />
                                 删除
@@ -1125,7 +1131,9 @@ function PlanDetailDialog(props: {
                 <AddPriceForm
                   planId={current().plan.id}
                   currency={current().plan.currency}
+                  onDuplicate={setDuplicateModel}
                   onAdded={() => {
+                    setDuplicateModel("");
                     const id = props.planId;
                     if (id !== null) void load(id);
                   }}
@@ -1135,12 +1143,48 @@ function PlanDetailDialog(props: {
           </div>
         )}
       </Show>
-    </Dialog>
+      </Dialog>
+
+      {/* 删模型价不可撤销，删完这个模型就没有定价了，先确认一次 */}
+      <Dialog
+        open={pendingPrice() !== null}
+        onOpenChange={open => {
+          if (!open) setPendingPrice(null);
+        }}
+        title="删掉这条模型价？"
+        description={`删掉「${pendingPrice()?.model ?? ""}」在「${detail()?.plan.name ?? "这个套餐"}」下的定价之后，这个模型在这个套餐里就没有价了，不能撤销。已经按它结算过的账单不受影响。`}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setPendingPrice(null)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deletingId() === pendingPrice()?.id}
+              onClick={() => {
+                const price = pendingPrice();
+                if (!price) return;
+                setPendingPrice(null);
+                void removePrice(price);
+              }}
+            >
+              确认删除
+            </Button>
+          </>
+        }
+      />
+    </>
   );
 }
 
 /** 详情里的「加模型价」表单。金额字段只认数字，取值与校验交给 buildPriceInput */
-function AddPriceForm(props: { planId: number; currency: string; onAdded: () => void }) {
+function AddPriceForm(props: {
+  planId: number;
+  currency: string;
+  /** 该模型已有价时递出它的 id，让调用方能把那一行标出来 */
+  onDuplicate: (model: string) => void;
+  onAdded: () => void;
+}) {
   const [model, setModel] = createSignal("");
   const [costMode, setCostMode] = createSignal<PlanCostMode>("token");
   const [inputPerMillion, setInputPerMillion] = createSignal("");
@@ -1183,7 +1227,15 @@ function AddPriceForm(props: { planId: number; currency: string; onAdded: () => 
       setRequestWeight("1");
       props.onAdded();
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "添加失败");
+      const message = err instanceof Error ? err.message : "添加失败";
+      // 409 说「该模型已有定价」时，光把这句话摆在表单里没用 —— 得让人知道
+      // 要去删哪一行。除了说明怎么走，还把模型名交回去，上面那张表会标出冲突行。
+      if (message.includes("已有定价")) {
+        setNotice(`${message}：先在上面那张表里删掉「${model().trim()}」那一行，再加新的`);
+        props.onDuplicate(model().trim());
+      } else {
+        setNotice(message);
+      }
     } finally {
       setPending(false);
     }
