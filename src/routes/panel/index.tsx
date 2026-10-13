@@ -167,7 +167,12 @@ export default function PanelOverview() {
             />
           </div>
           <div class="p-4">
-            <UsageChart series={usage.data()} metric={metric()} />
+            <UsageChart
+              series={usage.data()}
+              metric={metric()}
+              loading={usage.loading()}
+              error={usage.error() ?? undefined}
+            />
           </div>
         </Card>
 

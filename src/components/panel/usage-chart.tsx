@@ -35,7 +35,17 @@ function usageModels(series: UsageSeriesItem[]) {
   return seen;
 }
 
-export function UsageChart(props: { series: UsageSeriesItem[]; metric: "tokens" | "revenue" }) {
+/**
+ * props.loading 与 props.error 只用来选空态那一句。
+ * 取数失败时 props.series 也是空的，不区分的话「接口挂了」会显示成
+ * 「这段时间还没有产生调用」—— 一句与事实相反的话。重试入口在页头那块 ErrorState 上。
+ */
+export function UsageChart(props: {
+  series: UsageSeriesItem[];
+  metric: "tokens" | "revenue";
+  loading?: boolean;
+  error?: string;
+}) {
   const [hovered, setHovered] = createSignal<number | null>(null);
 
   const models = createMemo(() => usageModels(props.series));
@@ -70,7 +80,14 @@ export function UsageChart(props: { series: UsageSeriesItem[]; metric: "tokens" 
   return (
     <Show
       when={props.series.length > 0}
-      fallback={<EmptyState title="暂无用量" description="这段时间还没有产生调用" />}
+      fallback={
+        <EmptyState
+          title={props.loading ? "正在加载…" : props.error ? "用量没取到" : "暂无用量"}
+          description={
+            props.loading || props.error ? undefined : "这段时间还没有产生调用"
+          }
+        />
+      }
     >
       <div class="relative">
         <svg

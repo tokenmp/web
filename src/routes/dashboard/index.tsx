@@ -43,26 +43,28 @@ export default function DashboardOverview() {
   const stats = () => {
     const data = summary.data();
     const last = data.last_24h;
+    // 加载中不给 0：0 和「真的是 0」分不开，而这一条正好是「有没有出事」的第一眼
+    const pending = summary.loading();
     return [
       {
         label: "近 24 小时请求",
-        value: formatNumber(last.requests),
-        hint: `成功 ${formatNumber(last.success)} 次`,
+        value: pending ? "—" : formatNumber(last.requests),
+        hint: pending ? "正在加载…" : `成功 ${formatNumber(last.success)} 次`,
       },
       {
         label: "成功率",
-        value: `${last.success_rate}%`,
-        hint: `${formatNumber(last.success)} / ${formatNumber(last.requests)}`,
+        value: pending ? "—" : `${last.success_rate}%`,
+        hint: pending ? "正在加载…" : `${formatNumber(last.success)} / ${formatNumber(last.requests)}`,
       },
       {
         label: "近 24 小时收入",
-        value: formatCurrency(last.revenue),
-        hint: `成本 ${formatCurrency(last.cost)}`,
+        value: pending ? "—" : formatCurrency(last.revenue),
+        hint: pending ? "正在加载…" : `成本 ${formatCurrency(last.cost)}`,
       },
       {
         label: "余额不足用户",
-        value: formatNumber(data.low_balance_users),
-        hint: "余额 + 信用 ≤ 0",
+        value: pending ? "—" : formatNumber(data.low_balance_users),
+        hint: pending ? "正在加载…" : "余额 + 授信 ≤ 0",
       },
     ];
   };
@@ -131,7 +133,11 @@ export default function DashboardOverview() {
             <div class="space-y-3 px-4 pb-4">
               <Show
                 when={revenueRows().length > 0}
-                fallback={<p class="text-sm text-muted-foreground">暂无计费数据</p>}
+                fallback={
+                  <p class="text-sm text-muted-foreground">
+                    {usage.loading() ? "正在加载…" : usage.error() ? "用量没取到" : "暂无计费数据"}
+                  </p>
+                }
               >
                 <For each={revenueRows()}>
                   {row => (
@@ -177,7 +183,13 @@ export default function DashboardOverview() {
                   when={recent.data().items.length > 0}
                   fallback={
                     <tr class="border-b last:border-0">
-                      <Td class="py-10 text-center text-muted-foreground">暂无计费流水</Td>
+                      <Td class="py-10 text-center text-muted-foreground">
+                        {recent.loading()
+                          ? "正在加载…"
+                          : recent.error()
+                            ? "账单没取到"
+                            : "暂无计费流水"}
+                      </Td>
                     </tr>
                   }
                 >

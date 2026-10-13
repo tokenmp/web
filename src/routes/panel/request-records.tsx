@@ -204,8 +204,14 @@ export default function PanelRequestRecords() {
               请求详情
             </Button>
           )}
-          empty={hasFilter() ? "没有匹配的记录" : "暂无请求记录"}
-          emptyDescription={hasFilter() ? "试试调整搜索词或筛选条件" : "还没有产生过 API 调用"}
+          empty={list.loading() ? "正在加载…" : hasFilter() ? "没有匹配的记录" : "暂无请求记录"}
+          emptyDescription={
+            list.loading()
+              ? undefined
+              : hasFilter()
+                ? "试试调整搜索词或筛选条件"
+                : "还没有产生过 API 调用"
+          }
         />
 
         <PagerIfNeeded

@@ -331,6 +331,7 @@ export default function DashboardNotifications() {
       <NotificationForm
         open={formOpen()}
         users={users.data()}
+        usersError={users.error() ?? undefined}
         onOpenChange={setFormOpen}
         onSent={created => {
           setNotice("");
@@ -347,6 +348,8 @@ export default function DashboardNotifications() {
 function NotificationForm(props: {
   open: boolean;
   users: AdminUser[];
+  /** 用户列表取不到时下拉只剩「全部用户」。说出来，别让人以为是加载慢 */
+  usersError?: string;
   onOpenChange: (open: boolean) => void;
   onSent: (created: number) => void;
 }) {
@@ -505,7 +508,13 @@ function NotificationForm(props: {
             options={userOptions()}
             value={userId()}
             onChange={setUserId}
-            placeholder={props.users.length === 0 ? "用户列表加载中…" : "选择用户"}
+            placeholder={
+              props.users.length === 0
+                ? props.usersError
+                  ? "用户列表没取到，改不了这一项"
+                  : "用户列表加载中…"
+                : "选择用户"
+            }
             portal={false}
           />
         </Show>
