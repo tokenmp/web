@@ -8,6 +8,7 @@ import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { DecimalSplit } from "~/components/ui/decimal-split";
 import { Dialog } from "~/components/ui/dialog";
+import { ErrorState } from "~/components/ui/error-state";
 import { Select } from "~/components/ui/select";
 import { planModeMeta, pricingModeMeta } from "~/lib/panel-labels";
 import { createClientResource } from "~/lib/resource";
@@ -128,9 +129,11 @@ export default function PanelPlans() {
         </p>
       </Show>
       <Show when={error()}>
-        <p class="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
-          {error()}
-        </p>
+        <ErrorState
+          class="mb-4 rounded-lg border border-destructive/30"
+          message={error()!}
+          onRetry={() => void reload()}
+        />
       </Show>
 
       <Show

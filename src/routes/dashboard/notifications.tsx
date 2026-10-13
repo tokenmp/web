@@ -7,6 +7,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { Dialog } from "~/components/ui/dialog";
+import { ErrorState } from "~/components/ui/error-state";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { PagerIfNeeded } from "~/components/ui/pager";
@@ -157,6 +158,19 @@ export default function DashboardNotifications() {
       <StatRow items={stats()} />
 
       <Card class="overflow-hidden">
+        {/* 用户列表挂了不会让这一页整体不可用（投递记录还在），但接收用户的筛选和
+            用户名那一列都会退化：下拉只剩「全部用户」，表格里全变成「用户 #id」。
+            单独摆一条，别让管理员以为自己没有别的用户 */}
+        <Show when={users.error()}>
+          <ErrorState
+            variant="inline"
+            class="border-b px-4"
+            message={`用户列表读取失败：${users.error()}`}
+            retryLabel="重新加载用户"
+            onRetry={() => void users.reload()}
+          />
+        </Show>
+
         <Toolbar>
           <Select
             label="接收用户"
@@ -220,12 +234,12 @@ export default function DashboardNotifications() {
         </Show>
 
         <Show when={feed.error()}>
-          <div class="border-b px-4 py-6 text-center text-sm">
-            <p class="text-muted-foreground">{feed.error()}</p>
-            <Button variant="outline" size="sm" class="mt-3" onClick={() => void feed.reload()}>
-              重新加载
-            </Button>
-          </div>
+          <ErrorState
+            variant="inline"
+            class="border-b px-4"
+            message={feed.error()!}
+            onRetry={() => void feed.reload()}
+          />
         </Show>
 
         <Table tableClass="min-w-[960px]">

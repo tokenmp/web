@@ -3,6 +3,7 @@ import { For, type JSX, Show } from "solid-js";
 
 import { Badge } from "~/components/ui/badge";
 import { Card } from "~/components/ui/card";
+import { ErrorState } from "~/components/ui/error-state";
 import { billingStatusMeta } from "~/lib/panel-labels";
 import { createClientResource } from "~/lib/resource";
 import {
@@ -85,12 +86,15 @@ export default function DashboardOverview() {
 
       <div class="space-y-5">
         <Show when={error()}>
-          <p
-            class="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text"
-            role="alert"
-          >
-            {error()}
-          </p>
+          <ErrorState
+            class="rounded-lg border border-destructive/30"
+            message={error()!}
+            onRetry={() => {
+              void summary.reload();
+              void usage.reload();
+              void recent.reload();
+            }}
+          />
         </Show>
 
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

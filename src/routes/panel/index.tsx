@@ -10,6 +10,7 @@ import { Badge } from "~/components/ui/badge";
 import { buttonVariants } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { DecimalSplit } from "~/components/ui/decimal-split";
+import { ErrorState } from "~/components/ui/error-state";
 import { Segmented } from "~/components/ui/segmented";
 import { detailText, txSourceMeta } from "~/lib/panel-labels";
 import { createClientResource } from "~/lib/resource";
@@ -71,6 +72,10 @@ export default function PanelOverview() {
     return value.quota_used / value.quota_limit;
   };
 
+  /** 四个资源里任意一个失败就把错误摆出来。四张卡片各自只知道自己那半边，
+      取数失败时它们都会退化成「—」或空，「都挂了」和「本来就是空账号」长得一样 */
+  const error = () => plans.error() ?? me.error() ?? credits.error() ?? usage.error();
+
   const kpis = () => [
     {
       label: "可用积分",
@@ -103,6 +108,21 @@ export default function PanelOverview() {
   return (
     <>
       <Title>概览 | tokenmp web</Title>
+
+      {/* 四个资源都在这页上，任意一个挂了都要说出来：KPI 的「—」、水流的「暂无流水」
+          与真的没有数据长得一样，不说用户会以为是自己的账号就是空的 */}
+      <Show when={error()}>
+        <ErrorState
+          class="mb-5 rounded-lg border border-destructive/30"
+          message={error()!}
+          onRetry={() => {
+            void plans.reload();
+            void me.reload();
+            void credits.reload();
+            void usage.reload();
+          }}
+        />
+      </Show>
 
       {/* 五格指标条：手机上两列，lg 往上铺成一行 */}
       <div class="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border lg:grid-cols-5">

@@ -4,6 +4,7 @@ import Bell from "lucide-solid/icons/bell";
 import CheckCheck from "lucide-solid/icons/check-check";
 import { createSignal, For, Show } from "solid-js";
 
+import { ErrorState } from "~/components/ui/error-state";
 import { createClientResource } from "~/lib/resource";
 import {
   fetchNotifications,
@@ -113,16 +114,12 @@ export function NotificationBell() {
 
           <div class="max-h-[min(60dvh,26rem)] overflow-y-auto">
             <Show when={error()}>
-              <div class="px-4 py-6 text-center text-sm">
-                <p class="text-muted-foreground">{error()}</p>
-                <button
-                  type="button"
-                  onClick={() => void reload()}
-                  class="mt-2 rounded-md px-2 py-1 text-sm font-medium underline underline-offset-4 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  重试
-                </button>
-              </div>
+              <ErrorState
+                variant="inline"
+                class="px-4"
+                message={error()!}
+                onRetry={() => void reload()}
+              />
             </Show>
 
             <Show when={!error() && data().items.length === 0}>

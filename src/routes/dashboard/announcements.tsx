@@ -11,6 +11,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { Dialog } from "~/components/ui/dialog";
+import { ErrorState } from "~/components/ui/error-state";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { PagerIfNeeded } from "~/components/ui/pager";
@@ -226,14 +227,14 @@ export default function DashboardAnnouncements() {
         </Show>
 
         <Show when={list.error()}>
-          <div class="border-b px-4 py-6 text-center text-sm">
-            <p class="text-muted-foreground">{list.error()}</p>
-            <Button variant="outline" size="sm" class="mt-3" onClick={() => void list.reload()}>
-              重新加载
-            </Button>
-          </div>
+          {/* 取数失败统一走 ErrorState（#50），取数接缝跟本页的分页列表走（#63） */}
+          <ErrorState
+            variant="inline"
+            class="border-b px-4"
+            message={list.error()!}
+            onRetry={() => void list.reload()}
+          />
         </Show>
-
         <Table class="border-b" tableClass="min-w-[900px]">
           <TableHeader>
             <TableRow>
