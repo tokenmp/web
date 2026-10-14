@@ -194,7 +194,7 @@ export async function GET({ request }: APIEvent) {
  * POST /api/admin/users
  *
  * 建号。name 必填，其余可选。没给 password 时用随机串的哈希占位 ——
- * password_hash 是 NOT NULL，但管理员建号时往往只想先把账号和额度立起来；
+ * password_hash 是 NOT NULL，但管理员建号时往往只想先把账号与授信立起来；
  * 占位明文立即丢弃，没人知道它，账号等于「已建但还不能登录」，
  * 之后用 PUT 设密码即可。
  */
@@ -217,10 +217,10 @@ export async function POST({ request }: APIEvent) {
 
   let creditLimit = 0;
   if (body?.credit_limit !== undefined && body?.credit_limit !== null) {
-    if (typeof body.credit_limit !== "number") return errorJson("信用额度必须是数字", 400);
-    const problem = checkMoney(body.credit_limit, "信用额度");
+    if (typeof body.credit_limit !== "number") return errorJson("授信必须是数字", 400);
+    const problem = checkMoney(body.credit_limit, "授信");
     if (problem) return errorJson(problem, 400);
-    if (body.credit_limit < 0) return errorJson("信用额度必须是不小于 0 的数字", 400);
+    if (body.credit_limit < 0) return errorJson("授信必须是不小于 0 的数字", 400);
     creditLimit = body.credit_limit;
   }
 

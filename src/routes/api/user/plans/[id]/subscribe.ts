@@ -22,23 +22,23 @@ function parseId(raw: string | undefined) {
  * 订阅即一次扣款加一条订阅记录。分三种情况：
  *
  *   没有生效订阅        整额扣款，写一行订阅（与以前一致）
- *   换到另一个套餐      新价减去旧订阅的剩余额度折算价，只补差价
+ *   换到另一个套餐      新价减去旧订阅的剩余订阅额度折算价，只补差价
  *   同一个套餐再订      续费：整额扣款，新写一行，旧周期照常走完
  *
  * 换档为什么要折算：以前是「再订阅一次就按新套餐价格整额扣款」，
- * 从月付换到更高档会把同一段时间收两遍钱。现在把旧订阅剩下那段时间的额度
+ * 从月付换到更高档会把同一段时间收两遍钱。现在把旧订阅剩下那段时间的订阅额度
  * 折成钱抵掉，只收差额。
  *
  * 差额小于等于 0（降级到更便宜的档）时**不再扣款，也不退现** ——
  * 多出来的部分直接作废。这是产品口径：不然用户可以在周期中段降级套现。
- * 旧订阅的额度类型是 requests（按次）时折算价为 0：次数换不回钱。
+ * 旧订阅的订阅额度类型是 requests（按次）时折算价为 0：次数换不回钱。
  *
  * 折算公式见 src/lib/quota.ts。扣款、写订阅、改 users.plan_id 必须原子，所以放在
  * 一个事务里：先锁用户行串行化同一用户的并发换档，再用 applyCreditTx 扣款
  * （applyCredit 会自己开事务，嵌套会废掉原子性）。
  *
  * 按量付费不扣钱只切 plan_id；price=0 的套餐跳过扣款只写订阅。
- * 余额与剩余信用都不够时 applyCreditTx 抛 InsufficientBalanceError，翻成 402。
+ * 余额与剩余授信都不够时 applyCreditTx 抛 InsufficientBalanceError，翻成 402。
  */
 export async function POST({ request, params }: APIEvent) {
   const user = await requireUser(request);
@@ -56,7 +56,7 @@ export async function POST({ request, params }: APIEvent) {
 
   const now = new Date();
 
-  // 按量付费只是换个默认档位，没有额度也没有扣款
+  // 按量付费只是换个默认档位，没有订阅额度也没有扣款
   if (plan.mode === "pay_as_you_go") {
     await db
       .update(users)
@@ -120,7 +120,7 @@ export async function POST({ request, params }: APIEvent) {
         payable = round8(price - oldCredit);
       }
 
-      // payable <= 0：降级时旧额度折算价高于新价，差额不退现、直接作废（产品口径）
+      // payable <= 0：降级时旧订阅额度折算价高于新价，差额不退现、直接作废（产品口径）
       if (payable > 0) {
         await applyCreditTx(tx, {
           userId: user.id,

@@ -154,7 +154,7 @@ export function parsePlanInput(body: Record<string, unknown>): PlanInputResult {
   const daysProblem = checkInt32(quotaPeriodDays, "quota_period_days");
   if (daysProblem) return { ok: false, message: daysProblem };
 
-  // 订阅制没有额度与周期就没有可执行的含义，openapi 也把这两个列成订阅时的必填
+  // 订阅制没有订阅额度与周期就没有可执行的含义，openapi 也把这两个列成订阅时的必填
   if (mode === "subscription" && (!hasAmount || quotaAmount <= 0)) {
     return { ok: false, message: "订阅套餐必须填 quota_amount 且大于 0" };
   }

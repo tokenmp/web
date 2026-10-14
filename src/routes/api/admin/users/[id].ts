@@ -189,11 +189,11 @@ export async function PUT({ request, params }: APIEvent) {
 
   if (body?.credit_limit !== undefined && body?.credit_limit !== null) {
     // 与新建时的口径保持一致：只认数字，且要在 DECIMAL(14,8) 能表示的范围内，
-    // 授信额度是「最多能欠多少」，负数没有意义
-    if (typeof body.credit_limit !== "number") return errorJson("信用额度必须是数字", 400);
-    const problem = checkMoney(body.credit_limit, "信用额度");
+    // 授信是「最多能欠多少」，负数没有意义
+    if (typeof body.credit_limit !== "number") return errorJson("授信必须是数字", 400);
+    const problem = checkMoney(body.credit_limit, "授信");
     if (problem) return errorJson(problem, 400);
-    if (body.credit_limit < 0) return errorJson("信用额度必须是不小于 0 的数字", 400);
+    if (body.credit_limit < 0) return errorJson("授信必须是不小于 0 的数字", 400);
     patch.creditLimit = decimal8(body.credit_limit);
   }
 

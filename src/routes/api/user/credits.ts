@@ -10,10 +10,10 @@ import { creditTransactions, users } from "~/lib/schema";
 /**
  * GET /api/user/credits
  *
- * 我的额度概览与流水。这里是用户的**全部**流水，用量扣费、订阅扣款都要看得到，
+ * 我的余额与授信概览与流水。这里是用户的**全部**流水，用量扣费、订阅扣款都要看得到，
  * 与 /admin/adjust-logs 只取两类不同 —— 那是审计视角，这是对账视角。
  *
- * 额度从 users 表现读而不是用会话里的旧值，保证刚调完账就刷新能看到新余额。
+ * 余额与授信从 users 表现读而不是用会话里的旧值，保证刚调完账就刷新能看到新余额。
  * credit_available 不落库，用 credit_limit - credit_used 现算，口径与账本一致。
  *
  * 注意响应里 total 在 data 内部，这是 openapi 明写的例外；其他列表端点在顶层。

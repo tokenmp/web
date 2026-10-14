@@ -14,7 +14,7 @@ const SCALE = 10 ** 8;
  *
  * 按用户聚合的激活列表。
  *
- * 聚合放在 JS 里做而不是 SQL：每组的「当前额度」要取活跃且 period_end 最晚的那一行，
+ * 聚合放在 JS 里做而不是 SQL：每组的「当前订阅额度」要取活跃且 period_end 最晚的那一行，
  * 用窗口函数或者嵌套子查询在 drizzle 里都不好写，而本地数据量很小，
  * 一次全量读进来分组反而更直观。
  *
@@ -70,7 +70,7 @@ export async function GET({ request }: APIEvent) {
     else groups.set(row.userId, [row]);
   }
 
-  /** 当前额度：活跃且 period_end 最晚的那行；没有活跃的退到 period_end 最晚，再退到最近创建 */
+  /** 当前订阅额度：活跃且 period_end 最晚的那行；没有活跃的退到 period_end 最晚，再退到最近创建 */
   function pickCurrent(list: Row[]) {
     let best: Row | null = null;
     for (const row of list) {

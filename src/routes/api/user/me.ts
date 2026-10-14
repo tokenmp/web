@@ -10,9 +10,9 @@ import { userBudgets } from "~/lib/schema";
 /**
  * GET /api/user/me
  *
- * 用户端的当前用户，比 /auth/me 多了额度与预算。
+ * 用户端的当前用户，比 /auth/me 多了余额、授信与预算。
  * 不返回 credit_used：PanelMe 的字段集由 openapi 定死，多给的字段前端不用却容易引起误解，
- * 需要「已用信用」的话用 credit_limit - credit_available 自己算。
+ * 需要「已用授信」的话用 credit_limit - credit_available 自己算。
  */
 export async function GET({ request }: APIEvent) {
   const user = await requireUser(request);
