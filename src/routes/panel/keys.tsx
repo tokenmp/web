@@ -324,12 +324,14 @@ export default function PanelKeys() {
         </div>
       </Dialog>
 
-      {/* 明文只在这里出现一次 */}
+      {/* 明文只在这里出现一次，关掉就只剩前后缀。与控制台那两处同一个道理：
+          点遮罩、按 Esc、点右上角的 X 都不关，必须走「复制」或「我已保存」 */}
       <Dialog
         open={created() !== null}
         onOpenChange={open => {
           if (!open) setCreated(null);
         }}
+        dismissible={false}
         title="密钥已创建"
         description="明文密钥仅在创建后展示一次，请妥善保存。"
         footer={

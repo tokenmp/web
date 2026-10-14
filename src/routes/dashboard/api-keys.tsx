@@ -451,7 +451,8 @@ export default function DashboardApiKeys() {
         }
       />
 
-      {/* 明文只出现这一次：遮罩与 Esc 都不关，必须显式点「我已经保存好了」 */}
+      {/* 明文只出现这一次：遮罩、Esc 与右上角的 X 都不关，
+          必须显式点「我已经保存好了」 */}
       <Dialog
         open={issued() !== null}
         onOpenChange={open => {

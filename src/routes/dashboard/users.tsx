@@ -761,8 +761,8 @@ function UserDetail(props: { user: UserView; plans: PlanOption[]; onChanged: () 
       />
 
       {/* 明文密钥只在这里出现一次，关掉就只剩前后缀。
-          所以点遮罩、按 Esc 都不关：必须走「复制」或「我已保存」这两个动作，
-          否则手滑一下这份明文就没了 */}
+          所以点遮罩、按 Esc、点右上角的 X 都不关：必须走「复制」或「我已保存」
+          这两个动作，否则手滑一下这份明文就没了 */}
       <Dialog
         open={created() !== null}
         onOpenChange={open => {

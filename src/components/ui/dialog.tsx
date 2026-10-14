@@ -24,10 +24,11 @@ export type DialogProps = {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   /**
-   * 点遮罩与按 Esc 能不能关。默认能。
+   * 弹窗能不能被「跑掉」—— 点遮罩、按 Esc、点右上角的 X 三条都归它管。默认能。
    *
-   * 传 false 给「关了就拿不回来」的弹窗用 —— 明文密钥只展示一次，一次误点遮罩
-   * 就等于永久丢失。这种弹窗要关只能点里面的按钮。
+   * 传 false 给「关了就拿不回来」的弹窗用 —— 明文密钥只展示一次，一次误点
+   * 就等于永久丢失。这时右上角的 X 也不渲染，弹窗只能靠 footer 里的按钮关，
+   * 那正是调用方想让人做的动作（复制 / 我已保存）。
    */
   dismissible?: boolean;
 };
@@ -107,8 +108,9 @@ export function Dialog(props: DialogProps) {
           ref={el => {
             contentEl = el as HTMLElement;
           }}
-          // Kobalte 的关闭只有「点遮罩」与「Esc」两条，这里一并拦掉。
-          // 不拦的话遮罩点击会直接走到页面的 onOpenChange(false)，弹窗就没了。
+          // 不可关的弹窗要把三条路一起堵上：Kobalte 原语只给「点遮罩」与「Esc」
+          // 两条，右上角那个 X 是本组件自己渲染的，得单独判 —— 漏了它，
+          // dismissible={false} 就形同虚设，而明文密钥关掉就拿不回来。
           onPointerDownOutside={event => {
             if (props.dismissible === false) event.preventDefault();
           }}
@@ -134,12 +136,18 @@ export function Dialog(props: DialogProps) {
               </Show>
             </div>
 
-            <KDialog.CloseButton
-              aria-label="关闭弹窗"
-              class="hit-target -mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <X class="size-4" />
-            </KDialog.CloseButton>
+            {/* 不可关的弹窗连 X 也不画：这个按钮是本组件渲染的，
+                Kobalte 那两条拦截管不到它。留一个关得掉又拿不回来的出口，
+                比没有出口更糟。title 那个 div 独占一行时靠 justify-between
+                照样停在左边，布局不用另调。 */}
+            <Show when={props.dismissible !== false}>
+              <KDialog.CloseButton
+                aria-label="关闭弹窗"
+                class="hit-target -mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <X class="size-4" />
+              </KDialog.CloseButton>
+            </Show>
           </div>
 
           <div class="mt-4 text-sm">{props.children}</div>
