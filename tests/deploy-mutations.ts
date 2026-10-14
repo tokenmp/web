@@ -199,7 +199,7 @@ try {
     quota_period_days: 30,
     price: 10,
     currency: "CNY",
-    features: ["每月 20 元额度"],
+    features: ["每月 20 元订阅额度"],
   });
   expectStatus("建套餐", plan, 200);
   planId = plan.body?.data?.id;
@@ -716,9 +716,9 @@ try {
   const abBal = Number(await scalar("SELECT balance FROM users WHERE id = ?", [userAId]));
   const abCredit = Number(await scalar("SELECT credit_used FROM users WHERE id = ?", [userAId]));
   check("中断订阅后订阅行数 == 扣款流水数", abSubRows === abSubTx, { 订阅行数: abSubRows, 扣款流水: abSubTx });
-  // 余额不够时会接着占信用额度，所以不变量要算上 credit_used 的变化
+  // 余额不够时会接着占授信，所以不变量要算上 credit_used 的变化
   const abSpent = (abBalBefore - abBal) + (abCredit - abCreditBefore);
-  check("中断订阅后扣款总额自洽（余额 + 信用额度变化 = 10×扣款次数）", abSpent === 10 * (abSubTx - abTxBefore), { 本次扣款: abSubTx - abTxBefore, 余额变化: abBalBefore - abBal, 信用变化: abCredit - abCreditBefore });
+  check("中断订阅后扣款总额自洽（余额 + 授信变化 = 10×扣款次数）", abSpent === 10 * (abSubTx - abTxBefore), { 本次扣款: abSubTx - abTxBefore, 余额变化: abBalBefore - abBal, 授信变化: abCredit - abCreditBefore });
   const subUserBal = Number(await scalar("SELECT balance FROM users WHERE id = ?", [subId]));
   check("另一个用户的余额未被中断影响到（仍为 100）", subUserBal === 100, { 余额: subUserBal });
 

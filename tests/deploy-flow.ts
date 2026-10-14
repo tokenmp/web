@@ -162,7 +162,7 @@ try {
     quota_period_days: 30,
     price: 20,
     currency: "CNY",
-    features: ["每月 20 元额度", "全量模型"],
+    features: ["每月 20 元订阅额度", "全量模型"],
     recommended: true,
   });
   is("新建套餐", plan.status, 200);
@@ -189,7 +189,7 @@ try {
   is("订阅后余额", after.body?.data?.balance, 280);
   is("订阅后 plan_id", after.body?.data?.plan_id, planId);
   const current = await user.GET("/api/user/plans");
-  is("当前订阅的额度", [current.body?.data?.current?.quota_limit, current.body?.data?.current?.quota_used], [20, 0]);
+  is("当前订阅额度", [current.body?.data?.current?.quota_limit, current.body?.data?.current?.quota_used], [20, 0]);
 
   console.log("\n【7】用户自助签密钥与查流水");
   const myKey = await user.POST("/api/user/api_keys", { name: "我自己签的" });
