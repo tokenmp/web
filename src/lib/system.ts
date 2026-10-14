@@ -5,7 +5,7 @@
  * 请求都是同源的，会话 cookie 由浏览器自己带上，不用再设 Authorization。
  */
 
-import { ApiError, request } from "./api-client";
+import { ApiError, getList, query, request } from "./api-client";
 
 export type Severity = "info" | "warning" | "urgent";
 
@@ -114,10 +114,55 @@ export function markAllNotificationsRead() {
 
 /* ------------------------------------------------------- 管理端：公告 */
 
-/** 管理端列表，草稿与归档的也在里面 */
-export async function fetchAdminAnnouncements() {
-  const data = await request<{ items: Announcement[]; total: number }>("/api/admin/announcements");
-  return data.items ?? [];
+/**
+ * 公告的三个状态，与后端 `src/routes/api/admin/announcements.ts` 里的 STATUSES 同一份取值。
+ * 卡片计数与筛选都按这个顺序对，另处不要再写一遍字面量。
+ */
+export const ANNOUNCEMENT_STATUSES = ["draft", "published", "archived"] as const;
+
+/** 管理端公告列表的查询条件。status 传 undefined 表示不筛 */
+export type AdminAnnouncementQuery = {
+  page?: number;
+  size?: number;
+  status?: string;
+};
+
+/**
+ * 管理端列表，草稿与归档的也在里面。
+ *
+ * 收 page / size / status 并把 `total` 一起返回 —— 后端一直是分页接口（默认一页 20 条），
+ * 早先这里只回 `items`，页面上就把它当成了全部：统计卡、条数、翻页全按第一页算。
+ */
+export function fetchAdminAnnouncements(input: AdminAnnouncementQuery = {}) {
+  return getList<Announcement>(
+    `/api/admin/announcements${query({
+      page: input.page,
+      size: input.size,
+      status: input.status,
+    })}`,
+  );
+}
+
+/**
+ * 每个状态的公告各有多少条，给页头那四张卡用。
+ *
+ * 列表是分页的，本页的 items 里数不出全量 —— 「已发布」有 30 条而当前停在草稿页时，
+ * 数 items 会得出 0。所以按状态各发一次只取 total 的请求（`size=1`，服务端仍会走一次
+ * count）。四个状态就是四次请求，公告量级不大，换来的是卡片与列表同为全站口径。
+ */
+export async function fetchAnnouncementCounts() {
+  const [all, ...byStatus] = await Promise.all([
+    getList<Announcement>("/api/admin/announcements?page=1&size=1"),
+    ...ANNOUNCEMENT_STATUSES.map(status =>
+      getList<Announcement>(`/api/admin/announcements?page=1&size=1&status=${status}`),
+    ),
+  ]);
+
+  const counts: Record<string, number> = { total: all.total };
+  ANNOUNCEMENT_STATUSES.forEach((status, index) => {
+    counts[status] = byStatus[index].total;
+  });
+  return counts as { total: number } & Record<(typeof ANNOUNCEMENT_STATUSES)[number], number>;
 }
 
 export type AnnouncementInput = {
