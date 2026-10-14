@@ -1133,6 +1133,18 @@ components:
           type: boolean
           description: 仅用户端列表返回，表示当前用户关没关过这条；未登录时恒为 false
 
+    AnnouncementStatusCounts:
+      type: object
+      description: |
+        各状态公告的全站条数，给管理页页头那四张卡用。
+        只在 `GET /api/admin/announcements` 的响应里，不随该请求的 `status` 筛选变。
+      required: [total, draft, published, archived]
+      properties:
+        total: { type: integer, description: 三种状态相加 }
+        draft: { type: integer }
+        published: { type: integer }
+        archived: { type: integer }
+
     Notification:
       type: object
       description: 站内通知，面向单个用户
@@ -5040,6 +5052,9 @@ paths:
         管理端要能看见全部，所以不加 status 过滤时草稿也在。
         查询参数 page、size、status。
 
+        响应比通用列表多一个 `status_counts`：各状态的全站条数，给管理页页头那四张卡用。
+        它不随 `status` 变化 —— 切到「草稿」时，卡片仍要显示已发布有多少条。
+
         **只有本机有，线上没有这个端点。**
       operationId: getApiAdminAnnouncements
       x-implemented: local-only
@@ -5062,6 +5077,8 @@ paths:
                       items:
                         type: array
                         items: { $ref: "#/components/schemas/Announcement" }
+                      status_counts:
+                        $ref: "#/components/schemas/AnnouncementStatusCounts"
         "403":
           description: 不是管理员
           content:

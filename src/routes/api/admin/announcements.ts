@@ -20,6 +20,15 @@ function parseDate(value: unknown): Date | null {
  *
  * 公告列表，草稿和归档的也在里面 —— 管理端要能看见全部。
  * 查询参数：page、size、status。
+ *
+ * 还多回一个 `status_counts`：各状态的全站条数，给页头那四张卡用。
+ * 卡片必须与列表同口径（都是全站数字），而分页接口只回一页的 items，
+ * 前端数 items 会得出「已发布 0 条」这种假数。原先是前端按状态各发一次
+ * `size=1` 的请求去凑，四次请求只是换一个 GROUP BY —— 这里一次查询里带上，
+ * 前端那次拼装整个不要了。
+ *
+ * `status_counts` 不受 status 筛选影响，永远是全站的：切到「草稿」那一页时，
+ * 卡片仍要显示已发布有多少条，否则卡片会跟着筛选一起变，读起来像「全站只剩草稿」。
  */
 export async function GET({ request }: APIEvent) {
   const admin = await requireAdmin(request);
@@ -35,7 +44,7 @@ export async function GET({ request }: APIEvent) {
       ? eq(announcements.status, status)
       : undefined;
 
-  const [items, [total]] = await Promise.all([
+  const [items, [total], byStatus] = await Promise.all([
     db
       .select()
       .from(announcements)
@@ -44,9 +53,27 @@ export async function GET({ request }: APIEvent) {
       .limit(size)
       .offset((page - 1) * size),
     db.select({ n: count() }).from(announcements).where(where),
+    db
+      .select({ status: announcements.status, n: count() })
+      .from(announcements)
+      .groupBy(announcements.status),
   ]);
 
-  return json({ items: items.map(toSnake), total: Number(total?.n ?? 0) });
+  // 三个状态固定给全，某个状态一条都没有时也要是 0 而不是缺键，
+  // 前端拿它直接画卡，不用再 ?? 一遍。total 由三档相加，与 status 筛选无关 ——
+  // 它就是「公告总数」那张卡，不能跟着筛选走。
+  const statusCounts: Record<string, number> = {};
+  for (const key of STATUSES) statusCounts[key] = 0;
+  for (const row of byStatus) statusCounts[row.status] = Number(row.n);
+
+  return json({
+    items: items.map(toSnake),
+    total: Number(total?.n ?? 0),
+    status_counts: {
+      total: STATUSES.reduce((sum, key) => sum + statusCounts[key], 0),
+      ...statusCounts,
+    },
+  });
 }
 
 /**

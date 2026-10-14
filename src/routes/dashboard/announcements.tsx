@@ -32,7 +32,6 @@ import {
   createAnnouncement,
   deleteAnnouncement,
   fetchAdminAnnouncements,
-  fetchAnnouncementCounts,
   publishAnnouncement,
   severityLabels,
   updateAnnouncement,
@@ -83,6 +82,10 @@ function statusVariant(status: string): "outline" | "success" | "secondary" {
  * 全部，本地再 filter 一次，第 21 条起既看不到也翻不到，页头的统计也跟着错。
  * 状态筛选改走服务端之后，`total` 与列表页才同口径。
  *
+ * 页头四张卡读的是同一次响应里的 `status_counts`：全站口径，不随上面的筛选变。
+ * 这一点与充值单那页刻意不同 —— 那页卡片标着「本页」，从 items 里数；公告量级小，
+ * 全站数字比「本页」有用得多。别照 recharge.tsx 的写法把它改成本页口径。
+ *
  * 新建出来是草稿，发布是另一个动作（后端的约定），所以表单的提交按钮写的是
  * 「存为草稿」，免得管理员以为点一下就会推给全站。
  */
@@ -103,16 +106,12 @@ export default function DashboardAnnouncements() {
         size: size(),
         status: filter() === "all" ? undefined : filter(),
       }),
-    { items: [] as Announcement[], total: 0 },
+    {
+      items: [] as Announcement[],
+      total: 0,
+      status_counts: { total: 0, draft: 0, published: 0, archived: 0 },
+    },
   );
-
-  // 四张卡与列表同口径：都是全站数字，不是本页数出来的
-  const counts = createClientResource(fetchAnnouncementCounts, {
-    total: 0,
-    draft: 0,
-    published: 0,
-    archived: 0,
-  });
 
   // 切页或改每页条数后重新拉一次；首帧那次交给 createClientResource 自己的 onMount
   createEffect(
@@ -132,16 +131,15 @@ export default function DashboardAnnouncements() {
     else setPage(1);
   };
 
-  /** 增删改之后重拉：列表与四张卡一起，否则删掉一条卡上的数还停在原处 */
+  /** 增删改之后重拉。列表与四张卡的计数在同一次响应里，一次 reload 两样都新 */
   const refresh = async () => {
     await list.reload();
-    void counts.reload();
     // 删掉本页最后一条之后页码会越界，退回上一页，否则会停在一张空页上
     if (list.data().items.length === 0 && page() > 1) setPage(page() - 1);
   };
 
   const stats = () => {
-    const data = counts.data();
+    const data = list.data().status_counts;
     return [
       { label: "公告总数", value: formatNumber(data.total) },
       {
