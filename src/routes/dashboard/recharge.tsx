@@ -286,9 +286,15 @@ function AdminRecharge() {
                     </div>
                   </TableCell>
                   {/* 渠道流水号只有走到渠道那一步的单才有，pending 的单是空的；
-                      空值跟本仓库其它地方一样写一个破折号 */}
-                  <TableCell class="font-mono text-xs text-muted-foreground">
-                    {order.external_no ?? "—"}
+                      空值跟本仓库其它地方一样写一个破折号。渠道给的号长度不定，
+                      限宽截断，别让它把「金额」那一列挤窄 */}
+                  <TableCell class="text-muted-foreground">
+                    <span
+                      class="block max-w-[12rem] truncate font-mono text-xs"
+                      title={order.external_no ?? undefined}
+                    >
+                      {order.external_no ?? "—"}
+                    </span>
                   </TableCell>
                   <TableCell class="tabular-nums text-muted-foreground">
                     {formatDateTime(order.created_at)}
