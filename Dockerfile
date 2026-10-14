@@ -26,9 +26,9 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 COPY . .
-# 必须显式钉住 preset。nitro 不设时按「谁在跑构建」自动挑：在 bun 里跑就选 bun preset，
+# 必须显式指定 preset。nitro 不设时按「谁在跑构建」自动挑：在 bun 里跑就选 bun preset，
 # 产物直接引用全局 Bun，塞进 node 运行段会 `ReferenceError: Bun is not defined`。
-# 构建段是 bun 镜像，不钉就必然挑错。（本机 `bun run build` 挑到的是 node-server，
+# 构建段是 bun 镜像，不指定就必然挑错。（本机 `bun run build` 挑到的是 node-server，
 # 那是 nitro 认到了别的东西，不该赌这个。）
 ENV NITRO_PRESET=node-server
 RUN bun run build
