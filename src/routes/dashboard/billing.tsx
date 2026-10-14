@@ -1,10 +1,8 @@
 import { Title } from "@solidjs/meta";
-import Download from "lucide-solid/icons/download";
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 
 import { StatRow } from "~/components/layout/page-header";
 import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { ErrorState } from "~/components/ui/error-state";
 import { PagerIfNeeded } from "~/components/ui/pager";
@@ -135,14 +133,6 @@ export default function DashboardBilling() {
             }}
             ariaLabel="流水状态"
           />
-
-          {/* 手机上一行塞不下两组分段，导出按钮会单独落到下一行。用 ml-auto 而不是
-              ToolbarSpacer：后者只是一个 0 宽的占位块，它先被放到上一行之后，
-              就没有空的宽度留给落到下一行的按钮了。 */}
-          <Button variant="outline" class="ml-auto">
-            <Download class="size-4" aria-hidden="true" />
-            导出 CSV
-          </Button>
         </Toolbar>
 
         <Show when={list.error()}>

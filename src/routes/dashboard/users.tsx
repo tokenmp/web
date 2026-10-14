@@ -60,6 +60,7 @@ import {
 import { createClientResource } from "~/lib/resource";
 import {
   BUDGET_PERIOD_LABEL,
+  checkEmail,
   formatCurrency,
   formatDate,
   formatDateTime,
@@ -888,6 +889,13 @@ function UserFormDialog(props: {
     const amount = Number(creditLimit());
     if (!Number.isFinite(amount) || amount < 0) {
       setNotice("授信必须是不小于 0 的数字");
+      return;
+    }
+
+    // 只查形状，查不了可达性；后端那道仍是真正的闸（长度与查重）
+    const emailProblem = checkEmail(email());
+    if (emailProblem) {
+      setNotice(emailProblem);
       return;
     }
 

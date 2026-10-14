@@ -136,3 +136,34 @@ export function isExpired(value: string | Date | null | undefined) {
   const date = toDate(value);
   return date !== null && date.getTime() < Date.now();
 }
+
+/**
+ * 邮箱形状检查，返回错误文案或 null。空串当没填。
+ *
+ * 只回答「看起来是不是一个邮箱」：有没有 `@`、域名里有没有点、各部分有没有空白。
+ * 域名存不存在、有没有 MX、收不收得到信都查不了 —— 那是投递路径上的事，
+ * 浏览器里做不了也不该做。后端那道（`src/routes/api/admin/users.ts` 的长度与查重）
+ * 才是真正的闸，这道只是省用户一次白跑。
+ *
+ * 放在 utils 而不是某个页面里：用户表单与将来的邀请、注册入口都要这一道。
+ */
+export function checkEmail(value: string): string | null {
+  const email = value.trim();
+  if (!email) return null;
+
+  if (/\s/.test(email)) return "邮箱里不能有空格";
+
+  const at = email.indexOf("@");
+  if (at === -1) return "邮箱里少了 @，要写成「名@域名」";
+  if (at !== email.lastIndexOf("@")) return "邮箱里只能有一个 @";
+  if (at === 0) return "邮箱的 @ 前面要有内容";
+  if (at === email.length - 1) return "邮箱的 @ 后面要跟域名";
+
+  const domain = email.slice(at + 1);
+  if (!domain.includes(".")) return "邮箱的域名要点一下，例如 example.com";
+  // 空段同时盖住开头结尾的点与连着的两个点：.a.com、a.com.、a..com 都不合法
+  if (domain.split(".").some(part => part === "")) {
+    return "邮箱的域名每一段都不能是空的（开头结尾的点、连着两个点都不行）";
+  }
+  return null;
+}

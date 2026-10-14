@@ -59,11 +59,20 @@ function statusLabel(status: string) {
   return RECHARGE_STATUS_LABEL[status as RechargeStatus] ?? status;
 }
 
-/** datetime-local 的值转 ISO；空值或非法值返回 undefined，交给后端忽略 */
-function toIso(value: string) {
+/**
+ * datetime-local 的值转 ISO；空值或非法值返回 undefined，交给后端忽略。
+ *
+ * 输入框只精确到分钟（`2026-10-14T12:00`），而后端对 `end` 用的是闭区间（`lte`）：
+ * 直接转成 12:00:00.000 会把这一分钟里 12:00:00–12:00:59 的充值单漏掉。
+ * 所以 `end` 要算成这一分钟的最后一毫秒 —— 填「12:00」的意思是「到 12:00 为止」。
+ */
+function toIso(value: string, edge: "start" | "end" = "start") {
   if (!value) return undefined;
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+  if (Number.isNaN(date.getTime())) return undefined;
+  // 只在输入没带秒的时候补：带了秒就按用户填的算
+  if (edge === "end" && !/:\d{2}:\d{2}/.test(value)) date.setSeconds(59, 999);
+  return date.toISOString();
 }
 
 /**
@@ -96,7 +105,7 @@ function AdminRecharge() {
         status: status() === "all" ? undefined : (status() as RechargeStatus),
         channel: channel().trim() || undefined,
         start: toIso(start()),
-        end: toIso(end()),
+        end: toIso(end(), "end"),
       }),
     { items: [], total: 0 },
   );
@@ -245,6 +254,7 @@ function AdminRecharge() {
               <TableHead class="text-right">金额</TableHead>
               <TableHead>渠道</TableHead>
               <TableHead>状态</TableHead>
+              <TableHead>渠道流水号</TableHead>
               <TableHead>创建时间</TableHead>
               <TableHead>到账时间</TableHead>
             </TableRow>
@@ -275,6 +285,11 @@ function AdminRecharge() {
                       </Show>
                     </div>
                   </TableCell>
+                  {/* 渠道流水号只有走到渠道那一步的单才有，pending 的单是空的；
+                      空值跟本仓库其它地方一样写一个破折号 */}
+                  <TableCell class="font-mono text-xs text-muted-foreground">
+                    {order.external_no ?? "—"}
+                  </TableCell>
                   <TableCell class="tabular-nums text-muted-foreground">
                     {formatDateTime(order.created_at)}
                   </TableCell>
@@ -287,7 +302,7 @@ function AdminRecharge() {
 
             <Show when={orders.data().items.length === 0}>
               <TableRow>
-                <TableCell class="py-10 text-center text-muted-foreground" colSpan={7}>
+                <TableCell class="py-10 text-center text-muted-foreground" colSpan={8}>
                   {orders.loading()
                     ? "正在加载…"
                     : orders.error()
