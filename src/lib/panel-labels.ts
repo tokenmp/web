@@ -32,7 +32,6 @@ export function txSourceMeta(source: string): BadgeMeta {
   }
 }
 
-/** 扣的是订阅额度还是余额 */
 /**
  * 流水里的 detail 在后端是 JSON：本机通常是 null，网关回写时可能是字符串或对象，
  * 这里取一个能当摘要看的字符串，取不到返回 null。
@@ -48,8 +47,9 @@ export function detailText(detail: unknown): string | null {
   return null;
 }
 
+/** 扣的是订阅额度还是余额。两个值都是钱袋名，别只写「额度」——它同时指余额与授信 */
 export function ledgerMeta(ledger: string): BadgeMeta {
-  if (ledger === "quota") return { label: "额度", variant: "outline" };
+  if (ledger === "quota") return { label: "订阅额度", variant: "outline" };
   if (ledger === "balance") return { label: "余额", variant: "secondary" };
   return { label: ledger, variant: "secondary" };
 }

@@ -32,7 +32,7 @@ const SERVICE_LINKS = [
   { href: "/panel/credits", label: "余额明细", hint: "每一笔扣款与充值" },
   { href: "/panel/billing", label: "账单流水", hint: "调用花了多少" },
   { href: "/panel/keys", label: "我的密钥", hint: "新建与吊销 API Key" },
-  { href: "/panel/plans", label: "套餐", hint: "订阅与额度" },
+  { href: "/panel/plans", label: "套餐", hint: "订阅与订阅额度" },
   { href: "/panel/accounts", label: "我的账号", hint: "分享上游账号换分成" },
   { href: "/panel/channels", label: "我的渠道", hint: "申请与渠道组" },
   { href: "/panel/models", label: "模型目录", hint: "可用模型与价格" },
@@ -41,7 +41,7 @@ const SERVICE_LINKS = [
 /**
  * 个人中心。
  *
- * 面板里唯一放「关于我」的地方：账户、额度、预算、偏好，以及登出。
+ * 面板里唯一放「关于我」的地方：账户、余额与授信、预算、偏好，以及登出。
  * 手机端的顶栏只有一个标题和一个铃铛，登出与换主题收在这里 ——
  * 线上也是这么分的（登出不放顶栏）。
  */
@@ -157,8 +157,8 @@ function PanelMePage() {
         <Card class="p-5">
           <div class="flex items-start justify-between gap-3">
             <div>
-              <h2 class="text-sm font-semibold">可用额度</h2>
-              <p class="mt-1 text-xs text-muted-foreground">余额 + 剩余信用</p>
+              <h2 class="text-sm font-semibold">可用</h2>
+              <p class="mt-1 text-xs text-muted-foreground">余额 + 剩余授信</p>
             </div>
             <A
               href="/panel/credits"
@@ -190,7 +190,7 @@ function PanelMePage() {
                 </dd>
               </div>
               <div>
-                <dt class="text-muted-foreground">信用额度</dt>
+                <dt class="text-muted-foreground">剩余授信</dt>
                 <dd class="mt-0.5 font-medium">
                   <DecimalSplit text={formatPoints(me.data()!.credit_available)} />
                   <span class="ml-1 text-muted-foreground">
@@ -205,7 +205,7 @@ function PanelMePage() {
         <Card class="p-5">
           <div class="flex items-start justify-between gap-3">
             <div>
-              <h2 class="text-sm font-semibold">本周期额度</h2>
+              <h2 class="text-sm font-semibold">本周期订阅额度</h2>
               <p class="mt-1 text-xs text-muted-foreground">
                 {current()
                   ? current()!.subscription
@@ -232,7 +232,7 @@ function PanelMePage() {
                 {plans.error() ??
                   (plans.loading() || plans.data().plans.length === 0
                     ? "加载中…"
-                    : "到套餐页订阅一档，就有周期额度可用")}
+                    : "到套餐页订阅一档，就有订阅额度可用")}
               </p>
             }
           >
@@ -240,7 +240,7 @@ function PanelMePage() {
               when={current()!.subscription}
               fallback={
                 <>
-                  <p class="mt-3 text-sm text-muted-foreground">还没有周期额度</p>
+                  <p class="mt-3 text-sm text-muted-foreground">还没有订阅额度</p>
                   <A
                     href="/panel/plans"
                     class={`${buttonVariants({ variant: "outline" })} mt-3`}
@@ -263,7 +263,7 @@ function PanelMePage() {
                 aria-valuenow={Math.round(quotaRate() * 100)}
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-label="本周期额度用量"
+                aria-label="本周期订阅额度用量"
               >
                 <div
                   class="h-full rounded-full bg-primary"

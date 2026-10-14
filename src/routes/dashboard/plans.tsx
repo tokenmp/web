@@ -80,10 +80,10 @@ const EXPIRE_OPTIONS: { value: ActivationExpire; label: string }[] = [
 const HERO_FEATURES = [
   "同一把密钥调用全部渠道，换模型不用改代码",
   "请求失败自动重试，重试的调用不额外计费",
-  "余额与套餐额度实时扣减，没有隐藏费用",
+  "余额与订阅额度实时扣减，没有隐藏费用",
   "用量、账单、调用日志随时导出 CSV",
   "密钥权限隔离，支持 IP 白名单",
-  "套餐升降级当天生效，剩余额度按天折算",
+  "套餐升降级当天生效，剩余订阅额度按天折算",
 ];
 
 /**
@@ -349,7 +349,7 @@ export default function DashboardPlans() {
             <TableRow>
               <TableHead>用户</TableHead>
               <TableHead>当前套餐</TableHead>
-              <TableHead>额度</TableHead>
+              <TableHead>本周期订阅额度</TableHead>
               <TableHead>周期</TableHead>
               <TableHead class="text-right">累计消费</TableHead>
               <TableHead class="text-right">激活次数</TableHead>
@@ -426,7 +426,7 @@ export default function DashboardPlans() {
 
       <Card class="mt-4 p-5">
         <h2 class="font-semibold tracking-tight">所有套餐都包含</h2>
-        <p class="mt-1 text-sm text-muted-foreground">不计入额度的通用能力</p>
+        <p class="mt-1 text-sm text-muted-foreground">不计入订阅额度的通用能力</p>
         <ul class="mt-4 grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-3">
           <For each={HERO_FEATURES}>
             {item => (
@@ -797,18 +797,18 @@ function PlanFormDialog(props: {
         <Show when={mode() === "subscription"}>
           <div class="space-y-4 rounded-lg border p-4">
             <div class="space-y-1.5">
-              <Label>额度单位</Label>
+              <Label>订阅额度单位</Label>
               <Segmented
                 options={QUOTA_KIND_OPTIONS}
                 value={quotaKind()}
                 onChange={setQuotaKind}
-                ariaLabel="额度单位"
+                ariaLabel="订阅额度单位"
               />
             </div>
 
             <div class="grid gap-4 sm:grid-cols-2">
               <div class="space-y-1.5">
-                <Label for="plan-quota-amount">每周期额度</Label>
+                <Label for="plan-quota-amount">每周期订阅额度</Label>
                 <Input
                   id="plan-quota-amount"
                   type="number"
@@ -851,7 +851,7 @@ function PlanFormDialog(props: {
             id="plan-features"
             rows={4}
             value={features()}
-            placeholder={"一行一条，例如：\n每月 68 元额度\n全量模型可用"}
+            placeholder={"一行一条，例如：\n每月 68 元订阅额度\n全量模型可用"}
             onInput={event => setFeatures(event.currentTarget.value)}
           />
         </div>
@@ -984,13 +984,13 @@ function PlanDetailDialog(props: {
                 value={current().plan.pricing_mode === "markup" ? String(current().plan.markup_multiplier) : "不使用"}
               />
               <DetailRow
-                label="额度"
+                label="本周期订阅额度"
                 value={
                   current().plan.mode === "subscription"
                     ? `${current().plan.quota_amount} ${
                         QUOTA_KIND_LABELS[current().plan.quota_kind] ?? current().plan.quota_kind
                       } / ${current().plan.quota_period_days} 天`
-                    : "无额度，按量扣减"
+                    : "无订阅额度，按量扣减"
                 }
               />
               <DetailRow

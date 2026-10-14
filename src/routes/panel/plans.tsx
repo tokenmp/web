@@ -49,9 +49,9 @@ function hasPrice(plan: PanelPlan) {
 /**
  * 套餐。
  *
- * 三块：现在订的是什么（含周期额度用了多少）、最近用得怎么样、还能换什么。
+ * 三块：现在订的是什么（含本周期订阅额度用了多少）、最近用得怎么样、还能换什么。
  * 列表与当前订阅读 GET /api/user/plans；确认订阅会真的 POST 下单，换档时后端按旧订阅
- * 剩余额度折算抵扣，只补差价，余额不够回 402，这里单独提示「先充值」。
+ * 剩余订阅额度折算抵扣，只补差价，余额不够回 402，这里单独提示「先充值」。
  */
 export default function PanelPlans() {
   const { data, loading, error, reload } = createClientResource(fetchPlans, emptyPlans);
@@ -180,7 +180,7 @@ export default function PanelPlans() {
           <Show when={current()!.subscription}>
             <div class="p-4">
               <div class="flex items-center justify-between text-sm">
-                <span class="text-muted-foreground">本周期额度用量</span>
+                <span class="text-muted-foreground">本周期订阅额度用量</span>
                 <span>
                   <DecimalSplit text={formatPoints(current()!.subscription!.quota_used)} /> /{" "}
                   <DecimalSplit text={formatPoints(current()!.subscription!.quota_limit)} />
@@ -192,7 +192,7 @@ export default function PanelPlans() {
                 aria-valuenow={Math.round(used() * 100)}
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-label="本周期额度用量"
+                aria-label="本周期订阅额度用量"
               >
                 <div class="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, used() * 100)}%` }} />
               </div>
@@ -281,7 +281,7 @@ export default function PanelPlans() {
                       <dl class="mt-3 space-y-1.5 text-xs">
                         <div class="flex justify-between gap-3">
                           <dt class="text-muted-foreground">
-                            {plan.quota_kind === "requests" ? "周期点数" : "周期额度"}
+                            {plan.quota_kind === "requests" ? "周期点数" : "本周期订阅额度"}
                           </dt>
                           <dd class="font-medium tabular-nums">{quotaLabel(plan)}</dd>
                         </div>
@@ -332,13 +332,13 @@ export default function PanelPlans() {
 
       <div class="mt-5 space-y-1.5 text-xs text-muted-foreground">
         <p>
-          <span class="font-medium text-foreground">额度口径</span>
-          ：额度包的额度是「按本套餐价格计算的消费金额」。每笔请求按套餐倍率计价后，
-          先扣周期额度，再扣账户余额。
+          <span class="font-medium text-foreground">订阅额度口径</span>
+          ：额度包的订阅额度是「按本套餐价格计算的消费金额」。每笔请求按套餐倍率计价后，
+          先扣订阅额度，再扣账户余额。
         </p>
         <p>
           <span class="font-medium text-foreground">按次口径</span>
-          ：Coding Plan 的额度是点数，每次成功请求按模型权重扣减（失败不计费），
+          ：Coding Plan 的订阅额度是点数，每次成功请求按模型权重扣减（失败不计费），
           点数用尽后转余额按模型单价计费。
         </p>
         <p>
@@ -347,7 +347,7 @@ export default function PanelPlans() {
         </p>
         <p>
           <span class="font-medium text-foreground">切换套餐</span>
-          ：确认后立即从余额扣一次周期费用，新套餐额度从新周期起算；余额不足会提示先充值。
+          ：确认后立即从余额扣一次周期费用，新套餐的订阅额度从新周期起算；余额不足会提示先充值。
         </p>
       </div>
 
@@ -357,7 +357,7 @@ export default function PanelPlans() {
           if (!open) setPending(null);
         }}
         title={`订阅「${pending()?.name ?? ""}」？`}
-        description="切换后立即从余额扣周期费用，新套餐额度从新周期起算"
+        description="切换后立即从余额扣周期费用，新套餐的订阅额度从新周期起算"
         footer={
           <>
             <Button variant="outline" onClick={() => setPending(null)}>
@@ -397,7 +397,7 @@ export default function PanelPlans() {
               </dd>
             </div>
             <div class="flex justify-between gap-3">
-              <dt class="text-muted-foreground">周期额度</dt>
+              <dt class="text-muted-foreground">本周期订阅额度</dt>
               <dd class="font-medium tabular-nums">{quotaLabel(pending()!)}</dd>
             </div>
             <div class="flex justify-between gap-3">
