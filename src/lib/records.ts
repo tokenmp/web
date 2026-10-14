@@ -305,7 +305,7 @@ async function activeSubscription(tx: LedgerTx, userId: number) {
 
 /**
  * 试吃订阅额度。够不够由 WHERE 里的 quota_used + amount <= quota_limit 判，
- * 判定与累加合成一条语句，两个人同时摄入同一用户不会把额度吃超。
+ * 判定与累加合成一条语句，两个人同时摄入同一用户不会把订阅额度吃超。
  * 返回 true 表示这一笔记 quota，否则把这一行留给余额。
  *
  * 只认 quota_kind='money'：requests 那档的单位是次数，收入的元没法拿去比。
@@ -330,7 +330,7 @@ async function consumeQuota(
   return (result?.affectedRows ?? 0) > 0;
 }
 
-/** 把这一批的 ledger 回填到 billing_records：额度一组、余额一组，各写一次 */
+/** 把这一批的 ledger 回填到 billing_records：订阅额度一组、余额一组，各写一次 */
 async function markLedger(tx: LedgerTx, requestIds: string[], ledger: "quota" | "balance") {
   for (const chunk of chunkArray(requestIds, 400)) {
     await tx.update(billingRecords).set({ ledger }).where(inArray(billingRecords.requestId, chunk));
@@ -338,14 +338,14 @@ async function markLedger(tx: LedgerTx, requestIds: string[], ledger: "quota" | 
 }
 
 /**
- * 摄入时扣费。走哪个口袋由本机判：有生效订阅先吃订阅额度，额度不够或没有订阅才走余额。
+ * 摄入时扣费。走哪个口袋由本机判：有生效订阅先吃订阅额度，不够或没有订阅才走余额。
  * 一笔调用只落一种 ledger，不拆成两笔 —— 拆开之后 billing_records 与 credit_transactions
  * 就对不上了。余额不够时允许透支，与调账一致：请求已经发生，拒绝只会丢数据。
  *
  * 传进来的必须是确实新插进去的 billing 行，跳过重复时不能扣费。
  */
 async function chargeBilling(tx: LedgerTx, rows: InsertRow[]) {
-  // 同一用户的额度按批次里的先后顺序吃，先来先占
+  // 同一用户的订阅额度按批次里的先后顺序吃，先来先占
   const byUser = new Map<number, { row: InsertRow; amount: number }[]>();
   for (const row of rows) {
     const amount = Number(row.revenueAmount);
@@ -811,7 +811,7 @@ export type DashboardSummary = {
   low_balance_users: number;
 };
 
-/** 概览：固定最近 24 小时，外加余额加信用不大于 0 的启用用户数 */
+/** 概览：固定最近 24 小时，外加余额加授信不大于 0 的启用用户数 */
 export async function dashboardSummary(): Promise<DashboardSummary> {
   const from = new Date(Date.now() - 24 * 3_600_000);
 
