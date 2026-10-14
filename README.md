@@ -15,7 +15,7 @@ sudo docker compose down -v    # 停库并清空数据
 ```
 
 首次启动会按文件名顺序执行 [db/init](db/init) 下的脚本建表：`01-schema.sql` 是用户表，
-`02-system.sql` 是版本、公告、通知，`03-business.sql` 是余额账本、密钥、套餐与订阅，
+`02-system.sql` 是版本、公告、通知，`03-business.sql` 是余额账本、客户端密钥、套餐与订阅，
 两个脚本末尾各带几条种子数据。
 
 > `docker compose up` 每次都会重跑这些脚本，所以里面的 `INSERT` 都带 `WHERE NOT EXISTS`。
@@ -88,7 +88,7 @@ bun tests/deploy-mutations.ts # 变异
 可以反复跑。
 
 tests/ui-pages.ts 的做法值得一提：它先用接口造一条带唯一标记的数据（一个用户、一个套餐、
-一把密钥），再用浏览器打开对应页面找这条标记。标记出现就说明页面读的是数据库；
+一把客户端密钥），再用浏览器打开对应页面找这条标记。标记出现就说明页面读的是数据库；
 同时断言那些写死的模拟数据（如 `lin.zy@example.com`）不再出现。
 比断言 DOM 结构稳定得多。
 
@@ -221,33 +221,33 @@ bun run start     # 运行生产构建
 充值走管理员代充，就是调账接口带 `source: "recharge"`。用户也能自助下单
 （`/api/user/recharge`），但目前接的是模拟渠道，入账要等回调，真接渠道只需换回调来源与验签。
 生产必须配 `RECORDS_CALLBACK_SECRET`（转发内核的记录摄入与客户端密钥校验）与
-`RECHARGE_CALLBACK_SECRET`（充值渠道回调）两把密钥，启动前的检查会拦。
+`RECHARGE_CALLBACK_SECRET`（充值渠道回调）两把共享密钥，启动前的检查会拦。
 
 ### 账本口径
 
 账户上有三个量，语义与 openapi 对齐：
 
 ```
-已用信用 = credit_limit - credit_available
-可用额度 = balance + credit_available
+已用授信 = credit_limit - credit_available
+可用 = balance + credit_available（余额 + 剩余授信）
 ```
 
 `credit_available` 不落库，每次由 `credit_limit` 与 `credit_used` 现算，免得三个数各写各的。
 记账只有一处实现（[src/lib/ledger.ts](src/lib/ledger.ts)），调账、代充、订阅、
 转发侧的用量扣费都走它：
 
-- 入账（正数）先冲抵已用的信用额度，剩下的才进余额。
-- 扣款（负数）先扣余额，不够再占信用额度。
+- 入账（正数）先冲抵已用授信，剩下的才进余额。
+- 扣款（负数）先扣余额，不够再占授信。
 - 调账允许透支，管理动作不该被余额拦住；订阅用同一套逻辑但不允许，不够就回 402。
 
 转发侧推上来的计费行（[src/lib/records.ts](src/lib/records.ts) 的 `ingestRecords`）在摄入时
 一并扣费，走哪个口袋由本机判：
 
-- 有生效订阅（`status='active'` 里 `period_end` 最晚那条）且这一笔放得进剩余额度，记
-  `ledger='quota'`，只累加 `subscriptions.quota_used`，不动余额。额度是次数（`quota_kind='requests'`）
-  的订阅不走额度，收入是元，没法拿去比。
-- 额度放不下或没有订阅，记 `ledger='balance'`，按 `revenue_amount` 调 `applyCreditTx`。
-- 一笔调用只落一种 ledger，不拆成两笔。余额与信用都不够时允许透支，与调账一致：
+- 有生效订阅（`status='active'` 里 `period_end` 最晚那条）且这一笔放得进剩余订阅额度，记
+  `ledger='quota'`，只累加 `subscriptions.quota_used`，不动余额。订阅额度按次数计的
+  （`quota_kind='requests'`）不走订阅额度，收入是元，没法拿去比。
+- 订阅额度放不下或没有订阅，记 `ledger='balance'`，按 `revenue_amount` 调 `applyCreditTx`。
+- 一笔调用只落一种 ledger，不拆成两笔。余额与授信都不够时允许透支，与调账一致：
   请求已经发生，摄入时拒绝只会丢数据，`credit_transactions.delta` 与 `revenue_amount` 一一对应。
 - 插行、扣费、回填 `billing_records.ledger` 在同一个事务里；扣费只挂在确实新插进去的行上，
   同一个 `request_id` 重发不会扣第二次。
@@ -257,7 +257,7 @@ bun run start     # 运行生产构建
 
 ### 几个取舍
 
-密钥只存 sha256，明文只在签发那一次返回，之后只能看前缀和末 6 位。
+客户端密钥只存 sha256，明文只在签发那一次返回，之后只能看前缀和末 6 位。
 
 没给密码建号时用随机串的哈希占位，账号立起来但登录不了；管理员之后改密码时会同时把
 `token_version` 加一，已经签发的会话当场失效。
@@ -267,7 +267,7 @@ bun run start     # 运行生产构建
 
 续费就是再订一次：再扣一次钱，多一行订阅记录，老的那行留着当历史。
 当前订阅取「`active` 且 `period_end` 最晚」那条；提前续费时两行都是 `active`，
-两份额度怎么合并扣减属于转发侧的事，这次没做。
+两份订阅额度怎么合并扣减属于转发侧的事，这次没做。
 
 页面已经接上。除了依赖转发侧的那几页，控制台与用户面板的业务页都读真实接口了。
 逐页状态见 [DESIGN.md](DESIGN.md) 的页面表。
@@ -308,7 +308,7 @@ bunx @redocly/cli lint openapi.yaml
 
 线上那套是 React 写的（页面在它的 `src/pages/panel/`），本地这份按同样的信息架构重写成 Solid：
 十个页面、手机端底栏。字段名照 [openapi.yaml](openapi.yaml) 里 `UserPanel` 那组端点，
-能读的本机接口都读上了（额度、用量、套餐、密钥、账单、请求记录）；
+能读的本机接口都读上了（余额与授信、用量、套餐、客户端密钥、账单、调用记录）；
 另外三页（模型目录、账号、渠道）依赖 `remote` 接口，本机没有数据源，只留页面标题。
 
 两套界面共用同一套外壳（[app-shell.tsx](src/components/layout/app-shell.tsx)），

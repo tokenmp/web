@@ -6,13 +6,13 @@
 
 ## 一句话
 
-转发每次调用推两行：**调用记录**（每次都写，含失败）与**计费流水**（仅成功且收入大于 0 时写）。两者用同一个 `request_id` 关联。本机收到后按计费金额扣费：走余额的还会写第三行 `credit_transactions`，吃订阅额度的只累加 `subscriptions.quota_used`。
+转发每次调用推两行：**调用记录**（每次都写，含失败）与**计费流水**（仅成功且收入大于 0 时写）。两者用同一个 `request_id` 关联。本机收到后按计费金额扣费：走余额的还会写第三行 `credit_transactions`，走订阅额度的只累加 `subscriptions.quota_used`。
 
 | 表 | 一行代表 | 什么时候写 |
 | --- | --- | --- |
 | `request_records` | 一次调用，成功失败都算 | 每次调用结束 |
 | `billing_records` | 一次计费 | 调用成功且产生了费用 |
-| `credit_transactions` | 一次余额/信用变动 | 走余额的那笔计费，摄入时由本机按 `revenue_amount` 扣费写一条；吃订阅额度的那笔不写，见下面「摄入时一并记账」 |
+| `credit_transactions` | 一次余额/授信变动 | 走余额的那笔计费，摄入时由本机按 `revenue_amount` 扣费写一条；走订阅额度的那笔不写，见下面「摄入时一并记账」 |
 
 网关只推前两张，第三张由本机在同一个事务里写。
 
@@ -31,8 +31,8 @@
 
 | 列 | 类型 | 说明 |
 | --- | --- | --- |
-| `user_id` | bigint | 密钥归属的用户。缺了这条记录在用户面板里就看不见 |
-| `api_key_id` | bigint | 用的是哪把密钥 |
+| `user_id` | bigint | 客户端密钥归属的用户。缺了这条记录在用户面板里就看不见 |
+| `api_key_id` | bigint | 用的是哪把客户端密钥 |
 | `model` | varchar(128) | 客户端请求的模型名 |
 | `served_model` | varchar(128) | 实际服务的上游模型名。跨渠道改名时与 `model` 不同 |
 | `entry` | varchar(32) | 入口：`chat` / `responses` / `messages` / `gemini` |
@@ -90,7 +90,7 @@
 | 列 | 说明 |
 | --- | --- |
 | `owner_user_id` | 上游账号的属主。平台自营为空 |
-| `owner_credit_amount` | 分给属主的额度 |
+| `owner_credit_amount` | 渠道分成 |
 | `user_id`、`api_key_id`、`plan_id` | 这笔算在谁头上、走的哪个套餐 |
 | `channel_id`、`channel_name` | 哪个渠道 |
 
@@ -147,21 +147,21 @@
 | `source` | 恒为 `'usage'`。充值、调账、订阅各是别的取值，查用量扣费时按它筛 |
 | `ref_id` | 那个 `request_id`。**对账的锚点**：`billing_records.request_id` 与它对得上 |
 | `balance_after`、`credit_used_after` | 扣完之后的两个数，账本按 `users` 现算，只在这里留快照 |
-| `balance_part`、`credit_part` | 这一笔里余额出了多少、信用出了多少，两者之和等于 `delta` |
+| `balance_part`、`credit_part` | 这一笔里余额出了多少、授信出了多少，两者之和等于 `delta` |
 | `ledger` | 恒为 `'balance'`（只有走余额才写流水），与 `billing_records.ledger` 一致 |
 | `model`、`total_tokens` | 从计费行抄过来的，展示用 |
 | `reason`、`operator`、`detail` | 用量流水这三列都是空，它们给人工调账用 |
 
-只有走余额的那笔才写 `credit_transactions`。吃订阅额度的（`ledger='quota'`）没有余额变动，
+只有走余额的那笔才写 `credit_transactions`。走订阅额度的（`ledger='quota'`）没有余额变动，
 只改 `subscriptions.quota_used`，所以那种调用在账本流水里查不到 —— 想核这一笔要看 `billing_records`。
-一笔调用要么有流水要么有额度累加，不会两边都写。
+一笔调用要么写流水要么累加订阅额度，不会两边都写。
 
-另外两条不采用：**网关直接改库**省一次 HTTP，但记账口径就分叉了（网关要自己实现「先扣余额、不够占信用」），而且绕过了本机的事务与锁；**本机扫表补记**要写补偿逻辑，还会与实时扣费抢锁。
+另外两条不采用：**网关直接改库**省一次 HTTP，但记账口径就分叉了（网关要自己实现「先扣余额、不够占授信」），而且绕过了本机的事务与锁；**本机扫表补记**要写补偿逻辑，还会与实时扣费抢锁。
 
 **走哪个口袋由本机判，不看网关给的 `ledger`。** 请求体里带的 `ledger` 一律丢掉（`src/lib/records.ts:438`），由本机按用户当期的订阅余量定，再回填到 `billing_records.ledger`：
 
-1. 有生效订阅且 `quota_kind='money'`，先吃额度（`ledger='quota'`，累加 `subscriptions.quota_used`）。判定与累加合成一条 SQL，并发摄入不会把额度吃超。
-2. 额度不够、或没有订阅、或订阅是 `requests` 档（单位是次数，收入的元没法拿去比），整笔走余额（`ledger='balance'`）。
+1. 有生效订阅且 `quota_kind='money'`，先吃订阅额度（`ledger='quota'`，累加 `subscriptions.quota_used`）。判定与累加合成一条 SQL，并发摄入不会把订阅额度吃超。
+2. 订阅额度不够、或没有订阅、或订阅是 `requests` 档（单位是次数，收入的元没法拿去比），整笔走余额（`ledger='balance'`）。
 
 一笔调用只落一种 `ledger`，不拆成两笔 —— 拆开之后 `billing_records` 与 `credit_transactions` 就对不上了。
 
