@@ -1,9 +1,11 @@
 import { Title } from "@solidjs/meta";
 import Copy from "lucide-solid/icons/copy";
 import KeyRound from "lucide-solid/icons/key-round";
+import Pencil from "lucide-solid/icons/pencil";
 import Plus from "lucide-solid/icons/plus";
+import Power from "lucide-solid/icons/power";
 import Trash from "lucide-solid/icons/trash";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, Show } from "solid-js";
 
 import { ResponsiveTable } from "~/components/panel/responsive-table";
 import { Badge } from "~/components/ui/badge";
@@ -14,6 +16,7 @@ import { ErrorState } from "~/components/ui/error-state";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Segmented } from "~/components/ui/segmented";
+import { Textarea } from "~/components/ui/textarea";
 import { Toolbar, ToolbarSearch, ToolbarSpacer } from "~/components/ui/toolbar";
 import { keyStatusMeta } from "~/lib/panel-labels";
 import { createClientResource } from "~/lib/resource";
@@ -22,14 +25,25 @@ import {
   deleteApiKey,
   emptyKeys,
   fetchApiKeys,
+  splitModelWhitelist,
+  updateApiKey,
+  type ApiKeyPatch,
   type PanelApiKey,
 } from "~/lib/user-panel";
-import { formatDate, formatDateTime, formatRelativeTime, isExpired } from "~/lib/utils";
+import {
+  formatDate,
+  formatDateTime,
+  formatRelativeTime,
+  isExpired,
+  toDateTimeLocal,
+} from "~/lib/utils";
 
 const STATUS_TABS = [
   { value: "all", label: "全部状态" },
   { value: "1", label: "启用" },
-  { value: "0", label: "禁用" },
+  // 与状态徽标同一个词：徽标回的是「启用 / 停用」（panel-labels 的 keyStatusMeta），
+  // 这里原来写「禁用」，同一个页面里同一件事两种说法
+  { value: "0", label: "停用" },
 ] as const;
 
 type StatusFilter = (typeof STATUS_TABS)[number]["value"];
@@ -42,14 +56,17 @@ function maskedKey(key: PanelApiKey) {
 /**
  * 我的密钥。
  *
- * 两处跟「一个列表页」不一样的地方：
+ * 三处跟「一个列表页」不一样的地方：
  *   - 明文只在创建后弹一次。创建成功之后不再回列表，直接把明文糊在弹窗里，
  *     让人当场复制走 —— 后端也只存哈希，关掉就真没了。
  *   - 过期的密钥单独标出来。过期了接口不报错、只是调用失败，不标的话很难查。
+ *   - 停用是一条独立动作，不是删除的替代品：停用之后这把密钥仍留在列表里、
+ *     状态标着「停用」，可以再启用回来。所以列表里两者各占一个入口。
  *
- * 线上还有模型白名单、每分钟限速这些字段（接口里都有），本机先不做编辑入口。
+ * 名称、过期时间、模型白名单与每分钟限速都能改（PATCH /user/api_keys/{id}，
+ * 服务端按 user_id 收窄）。改完重新拉一次列表对齐，不用响应体的形状。
  *
- * 数据来源是 GET /api/user/api_keys；新建与删除都真实落库，删完重新拉列表对齐。
+ * 数据来源是 GET /api/user/api_keys；新建、改属性、停用启用与删除都真实落库。
  */
 export default function PanelKeys() {
   const { data, loading, error, reload } = createClientResource(fetchApiKeys, emptyKeys);
@@ -65,6 +82,9 @@ export default function PanelKeys() {
   const [notice, setNotice] = createSignal("");
 
   const [pendingDelete, setPendingDelete] = createSignal<PanelApiKey | null>(null);
+  const [editing, setEditing] = createSignal<PanelApiKey | null>(null);
+  /** 正在停用/启用的那一把，用来禁掉它自己的按钮 */
+  const [toggling, setToggling] = createSignal<number | null>(null);
 
   const keys = () => data().items;
 
@@ -123,6 +143,26 @@ export default function PanelKeys() {
       await reload();
     } finally {
       setBusy(false);
+    }
+  };
+
+  /**
+   * 停用 / 启用。不删任何东西 —— 停用之后这一把仍留在列表里、状态标着「停用」，
+   * 想再打开就再点一次。用哪一把、用不用是用户自己的判断，界面不替他藏起来。
+   */
+  const toggleStatus = async (key: PanelApiKey) => {
+    if (toggling() !== null) return;
+    setNotice("");
+    setToggling(key.id);
+    const next = key.status === 1 ? 0 : 1;
+    try {
+      await updateApiKey(key.id, { status: next });
+      await reload();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "改密钥状态失败");
+      await reload();
+    } finally {
+      setToggling(null);
     }
   };
 
@@ -255,16 +295,39 @@ export default function PanelKeys() {
             </Badge>
           )}
           actions={key => (
-            <Button
-              variant="ghost"
-              size="sm"
-              class="text-destructive-text"
-              aria-label={`删除密钥：${key.name ?? key.key_prefix}`}
-              onClick={() => setPendingDelete(key)}
-            >
-              <Trash class="size-3.5" aria-hidden="true" />
-              删除
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`编辑密钥：${key.name ?? key.key_prefix}`}
+                onClick={() => setEditing(key)}
+              >
+                <Pencil class="size-3.5" aria-hidden="true" />
+                编辑
+              </Button>
+              {/* 停用不是删除的替代品：停用之后这一行仍在，状态改成「停用」，
+                  再点一次就能启用回来。删除是另一条路，另给一个入口 */}
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={toggling() === key.id}
+                aria-label={`${key.status === 1 ? "停用" : "启用"}密钥：${key.name ?? key.key_prefix}`}
+                onClick={() => void toggleStatus(key)}
+              >
+                <Power class="size-3.5" aria-hidden="true" />
+                {toggling() === key.id ? "处理中…" : key.status === 1 ? "停用" : "启用"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                class="text-destructive-text"
+                aria-label={`删除密钥：${key.name ?? key.key_prefix}`}
+                onClick={() => setPendingDelete(key)}
+              >
+                <Trash class="size-3.5" aria-hidden="true" />
+                删除
+              </Button>
+            </>
           )}
           empty={
             loading()
@@ -377,8 +440,169 @@ export default function PanelKeys() {
             {pendingDelete()!.name ?? "未命名密钥"} ·{" "}
             <span class="font-mono text-xs">{maskedKey(pendingDelete()!)}</span>
           </p>
+          {/* 想暂时不让别人用，停用就够了，不必删 —— 删了就再也回不来 */}
+          <Show when={pendingDelete()!.status === 1}>
+            <p class="mt-2 text-xs text-muted-foreground">
+              只想暂时停掉它？关掉这个弹窗，用那一行的「停用」——
+              停用的密钥仍在列表里，随时能启用回来；删除不可撤销。
+            </p>
+          </Show>
         </Show>
       </Dialog>
+
+      <KeyEditDialog
+        item={editing()}
+        onOpenChange={open => {
+          if (!open) setEditing(null);
+        }}
+        onSaved={() => {
+          setEditing(null);
+          void reload();
+        }}
+      />
     </>
+  );
+}
+
+/**
+ * 改属性。与控制台那份同一套形状：四个字段每次一起送，空值表示清掉该限制。
+ *
+ * 不含状态 —— 停用与启用是列表行上的一个动作，混进这个表单会让人以为
+ * 要「保存修改」才生效。改完关掉弹窗并重新拉列表，所以这里不消费响应体。
+ */
+function KeyEditDialog(props: {
+  item: PanelApiKey | null;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = createSignal("");
+  const [expiresAt, setExpiresAt] = createSignal("");
+  const [whitelist, setWhitelist] = createSignal("");
+  const [rateLimit, setRateLimit] = createSignal("");
+  const [notice, setNotice] = createSignal("");
+  const [pending, setPending] = createSignal(false);
+
+  // 打开时用这一行的当前值填表。item 换成另一把密钥时也要重填，
+  // 所以读的是 props.item 而不是 open —— 弹窗不卸载，只切数据
+  createEffect(() => {
+    const item = props.item;
+    if (!item) return;
+    setName(item.name ?? "");
+    setExpiresAt(item.expires_at ? toDateTimeLocal(item.expires_at) : "");
+    setWhitelist(item.model_whitelist?.join(", ") ?? "");
+    setRateLimit(item.rate_limit_per_min ? String(item.rate_limit_per_min) : "");
+    setNotice("");
+    setPending(false);
+  });
+
+  const submit = async () => {
+    const item = props.item;
+    if (!item || pending()) return;
+
+    const rate = rateLimit().trim();
+    if (rate && (!/^\d+$/.test(rate) || Number(rate) <= 0)) {
+      setNotice("限速要是大于 0 的整数");
+      return;
+    }
+
+    const patch: ApiKeyPatch = {
+      name: name().trim() || null,
+      expires_at: expiresAt() ? new Date(expiresAt()).toISOString() : null,
+      model_whitelist: splitModelWhitelist(whitelist()),
+      rate_limit_per_min: rate ? Number(rate) : null,
+    };
+    // 空数组与不传不是一回事：不传是「不动这一列」，传 null 才是「不限模型」
+    if (patch.model_whitelist?.length === 0) patch.model_whitelist = null;
+
+    setPending(true);
+    setNotice("");
+    try {
+      await updateApiKey(item.id, patch);
+      props.onSaved();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={props.item !== null}
+      onOpenChange={props.onOpenChange}
+      title="编辑密钥"
+      description="白名单与限速留空表示不限。留空名称会变回「未命名密钥」。"
+      class="max-h-[calc(100dvh-2rem)] overflow-y-auto"
+      footer={
+        <>
+          <Button variant="outline" onClick={() => props.onOpenChange(false)}>
+            取消
+          </Button>
+          <Button disabled={pending()} onClick={() => void submit()}>
+            {pending() ? "保存中…" : "保存修改"}
+          </Button>
+        </>
+      }
+    >
+      <form
+        class="space-y-4"
+        onSubmit={event => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        <div class="space-y-1.5">
+          <Label for="panel-key-name">名称</Label>
+          <Input
+            id="panel-key-name"
+            maxLength={64}
+            placeholder="如 生产环境"
+            value={name()}
+            onInput={event => setName(event.currentTarget.value)}
+          />
+        </div>
+
+        <div class="space-y-1.5">
+          <Label for="panel-key-expires">过期时间</Label>
+          <Input
+            id="panel-key-expires"
+            type="datetime-local"
+            value={expiresAt()}
+            onInput={event => setExpiresAt(event.currentTarget.value)}
+          />
+          <p class="text-xs text-muted-foreground">留空表示永不过期</p>
+        </div>
+
+        <div class="space-y-1.5">
+          <Label for="panel-key-whitelist">模型白名单</Label>
+          <Textarea
+            id="panel-key-whitelist"
+            rows={3}
+            placeholder="例如：gpt-4o, claude-sonnet-4"
+            value={whitelist()}
+            onInput={event => setWhitelist(event.currentTarget.value)}
+          />
+          <p class="text-xs text-muted-foreground">用逗号或换行分隔，留空表示不限模型</p>
+        </div>
+
+        <div class="space-y-1.5">
+          <Label for="panel-key-rate">每分钟限速</Label>
+          <Input
+            id="panel-key-rate"
+            inputmode="numeric"
+            placeholder="例如：120"
+            value={rateLimit()}
+            onInput={event => setRateLimit(event.currentTarget.value)}
+          />
+          <p class="text-xs text-muted-foreground">单位是请求数，留空表示不限速</p>
+        </div>
+
+        <Show when={notice()}>
+          <p class="text-sm text-destructive-text" role="alert">
+            {notice()}
+          </p>
+        </Show>
+      </form>
+    </Dialog>
   );
 }

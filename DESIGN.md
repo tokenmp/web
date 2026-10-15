@@ -85,7 +85,7 @@
 | `/dashboard/channel-applications` | 渠道申请 | 空页，接口是 remote，等转发侧 |
 | `/dashboard/announcements` | 公告管理，草稿到发布的流程 | 已实现，接了接口 |
 | `/panel` | 用户面板概览，五格指标、近 7 日用量图、当前套餐、最近流水 | 已实现，接了接口 |
-| `/panel/keys` | 我的密钥，新建后明文只弹一次 | 已实现，接了接口 |
+| `/panel/keys` | 我的密钥，新建后明文只弹一次，可改属性、停用启用 | 已实现，接了接口 |
 | `/panel/models` | 模型目录 | 空页，接口是 remote，等转发侧 |
 | `/panel/request-records` | 请求日志，带详情抽屉 | 已实现，等转发侧回写数据 |
 | `/panel/billing` | 账单流水 | 已实现，等转发侧回写数据 |
