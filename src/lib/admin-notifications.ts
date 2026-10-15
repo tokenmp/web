@@ -12,9 +12,13 @@
 import { getList, query, request } from "./api-client";
 import type { NotificationItem } from "./system";
 
-// 通知页要选收件人，用的就是用户列表。AdminUser / fetchAdminUsers 只有
-// admin-users.ts 一份定义，这里转发出去，页面不必为了取用户再跨到 admin-keys。
-export { fetchAdminUsers, type AdminUser } from "./admin-users";
+// 通知页要选收件人，用的就是用户列表。AdminUser / fetchAdminUsers / fetchAllAdminUsers
+// 只有 admin-users.ts 一份定义，这里转发出去，页面不必为了取用户再跨到 admin-keys。
+export {
+  fetchAdminUsers,
+  fetchAllAdminUsers,
+  type AdminUser,
+} from "./admin-users";
 
 /** 投递记录 = 用户端通知 + 管理端字段 */
 export type AdminNotification = NotificationItem & {

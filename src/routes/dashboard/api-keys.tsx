@@ -63,9 +63,13 @@ export default function DashboardApiKeys() {
   const [userInput, setUserInput] = createSignal("");
   const [userQuery, setUserQuery] = createSignal("");
 
-  const users = createClientResource<AdminUser[]>(
-    () => fetchAdminUsers({ size: 100, keyword: userQuery() }).then(page => page.items),
-    [],
+  // 用户下拉只铺第一页 100 条（接口的 size 上限就是 100），不铺整份名册：
+  // 这一页是「先选一个人，再看他的密钥」，不是逐个浏览用户，几百个选项还带翻页的选择器
+  // 比搜索更难用；上面那个「按用户名找用户」的输入框已经是服务端模糊匹配，
+  // 找得到具体的人靠它。代价是名单被截断这件事必须写在界面上，见下面的提示。
+  const users = createClientResource(
+    () => fetchAdminUsers({ size: 100, keyword: userQuery() }),
+    { items: [] as AdminUser[], total: 0 },
   );
 
   const [selected, setSelected] = createSignal<AdminUser | null>(null);
@@ -81,7 +85,7 @@ export default function DashboardApiKeys() {
   const [pendingDelete, setPendingDelete] = createSignal<AdminApiKey | null>(null);
 
   const userOptions = createMemo(() =>
-    users.data().map(item => ({
+    users.data().items.map(item => ({
       value: String(item.id),
       label: item.email ? `${item.name}（${item.email}）` : item.name,
     })),
@@ -127,7 +131,7 @@ export default function DashboardApiKeys() {
   // 用户列表回来之后默认选中第一个，页面不留一个空表
   createEffect(() => {
     if (selected() !== null) return;
-    const first = users.data()[0];
+    const first = users.data().items[0];
     if (first) selectUser(first);
   });
 
@@ -215,11 +219,11 @@ export default function DashboardApiKeys() {
             options={userOptions()}
             value={selected() ? String(selected()!.id) : null}
             onChange={value => {
-              const user = users.data().find(item => String(item.id) === value);
+              const user = users.data().items.find(item => String(item.id) === value);
               if (user) selectUser(user);
             }}
             placeholder={users.loading() ? "加载中…" : "选择要管理密钥的用户"}
-            disabled={users.data().length === 0}
+            disabled={users.data().items.length === 0}
           />
 
           <Show when={selected()}>
@@ -235,6 +239,16 @@ export default function DashboardApiKeys() {
             )}
           </Show>
         </Toolbar>
+
+        {/* 下拉只铺得下 100 个，超出的不会出现在选项里。不写出来，管理员会以为
+            名单里就这么些人、以为某个用户不存在 */}
+        <Show when={users.data().total > users.data().items.length}>
+          <p class="border-b bg-warning/15 px-4 py-2.5 text-sm text-warning-text" role="status">
+            {userQuery() ? "匹配到" : "用户共"} {formatNumber(users.data().total)} 个，
+            上面的下拉只列出前 {formatNumber(users.data().items.length)} 个。
+            名单里没有的那个人，用「按用户名找用户」搜一下就会出来 —— 它是服务端匹配，不受这个上限影响。
+          </p>
+        </Show>
 
         <Show when={notice()}>
           <p

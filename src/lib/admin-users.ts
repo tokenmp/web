@@ -160,6 +160,39 @@ export function fetchAdminUsers(params: Partial<UserListParams> = {}) {
   });
 }
 
+/**
+ * 不分页地取回整份用户名册。
+ *
+ * 通知页要拿 user_id 换用户名，也拿它给「批量 id」判存在性，缺一个名字那一行就退化成
+ * 「用户 #id」、缺一个人还会把已存在的 id 误报成「不在用户列表里」。接口没有按 id
+ * 批量查名字的入参（只有 keyword），只能按 size 上限翻页取完 —— 与 admin-balances.ts
+ * 的 fetchAllBalanceAccounts 同一套写法：先拿 total 再按 total 翻页，
+ * 两次请求之间数据变了也不会死循环。
+ *
+ * maxPages 是给代价封顶用的：请求数随用户数线性增长（每页 100 条），
+ * 名册真大到翻不完时宁可停在 20 页并如实标出来，也不要在一次开页面里打上千个请求。
+ * 截断与否由返回的 truncated 带出去，界面必须说出来 —— 悄悄少几页正是这一条要修的毛病。
+ */
+export async function fetchAllAdminUsers({ maxPages = 20 } = {}) {
+  const size = 100;
+  const items: AdminUser[] = [];
+  let page = 1;
+  let total = 0;
+  let truncated = false;
+  for (;;) {
+    const res = await fetchAdminUsers({ page, size });
+    total = res.total;
+    items.push(...res.items);
+    if (res.total <= 0 || items.length >= res.total || res.items.length === 0) break;
+    if (page >= maxPages) {
+      truncated = true;
+      break;
+    }
+    page += 1;
+  }
+  return { items, total, truncated };
+}
+
 export function fetchUser(id: number) {
   return getData<UserView>(`/api/admin/users/${id}`);
 }
