@@ -86,7 +86,7 @@ export type BillingRecord = {
   total_tokens: number;
   created_at: string;
   /** 只有 /user/billing_records 会带 */
-  credit_paid?: number;
+  quota_paid?: number;
   balance_paid?: number;
 };
 

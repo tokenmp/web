@@ -91,6 +91,9 @@ const [created] = (await conn.query(
 const userId = created.insertId;
 const userToken = await signSession({ sub: userId, tv: 0, role: "user" });
 
+// 校验账单金额落在哪个口袋的对照小号，用到时才建；清理时按它删
+let pocketUserId = 0;
+
 const MODELS = ["vfy-model-alpha", "vfy-model-beta", "vfy-model-gamma"];
 const TOTAL_RECORDS = 200;
 const now = Date.now();
@@ -557,8 +560,77 @@ try {
     `total=${userBilling.body.total}`,
   );
   check(
-    "账单带 credit_paid / balance_paid",
-    typeof userBilling.body.items[0]?.credit_paid === "number" && typeof userBilling.body.items[0]?.balance_paid === "number",
+    "账单带 quota_paid / balance_paid",
+    typeof userBilling.body.items[0]?.quota_paid === "number" && typeof userBilling.body.items[0]?.balance_paid === "number",
+  );
+
+  // 上面那条只断言类型，两个字段对调也照样绿 —— 它证不了装的是哪个口袋的钱。
+  // 这里另起一个小号：主测试用户没有订阅，账单全走余额，改它会牵动这一节下面
+  // 一串计数。小号带一笔 3 元的生效订阅，造两笔账单：3 元那笔正好吃满订阅额度，
+  // 0.5 元那笔订阅额度不够、整笔走余额，两笔分别落进两个口袋。
+  const [pocketUser] = (await conn.query(
+    `INSERT INTO users (name, email, password_hash, role, status, credit_limit, balance, credit_used, token_version, source, created_at, updated_at)
+     VALUES (?, ?, 'x', 'user', 1, 50, 0, 0, 0, 'local', NOW(3), NOW(3))`,
+    [`${userName}-pocket`, `${userName}-pocket@example.com`],
+  )) as [ResultSetHeader, unknown];
+  pocketUserId = pocketUser.insertId;
+  const pocketToken = await signSession({ sub: pocketUserId, tv: 0, role: "user" });
+
+  await conn.query(
+    `INSERT INTO subscriptions (user_id, plan_id, amount, quota_kind, quota_limit, quota_used,
+                                period_start, period_end, status, created_at, updated_at)
+     VALUES (?, 2, 3, 'money', 3, 0, NOW(3), DATE_ADD(NOW(3), INTERVAL 30 DAY), 'active', NOW(3), NOW(3))`,
+    [pocketUserId],
+  );
+
+  const pocketQuotaId = `vfy-pocket-${stamp}-quota`;
+  const pocketBalanceId = `vfy-pocket-${stamp}-balance`;
+  const pocketIngest = await call(ingestPost, {
+    method: "POST",
+    path: "/api/internal/records",
+    headers: recordsHeaders,
+    body: {
+      // 请求体里给的 ledger 一律被丢掉（见 src/lib/records.ts 的摄入路径），
+      // 这里特意给反的：断言能过就说明取的是本机判定的口袋，不是入参
+      billing: [
+        { request_id: pocketQuotaId, user_id: pocketUserId, model: MODELS[0], revenue_amount: 3, ledger: "balance" },
+        { request_id: pocketBalanceId, user_id: pocketUserId, model: MODELS[0], revenue_amount: 0.5, ledger: "quota" },
+      ],
+    },
+  });
+  check("口袋对照的账单摄入成功", pocketIngest.status === 200 && pocketIngest.body.inserted === 2, JSON.stringify(pocketIngest.body));
+
+  const pocketLedgers = (await conn.query(
+    "SELECT request_id, ledger FROM billing_records WHERE user_id = ? ORDER BY request_id",
+    [pocketUserId],
+  )) as [Array<{ request_id: string; ledger: string | null }>, unknown];
+  check(
+    "库里的 ledger 与造数一致（3 元走订阅额度、0.5 元走余额）",
+    JSON.stringify(pocketLedgers[0].map(row => [row.request_id, row.ledger])) ===
+      JSON.stringify([
+        [pocketBalanceId, "balance"],
+        [pocketQuotaId, "quota"],
+      ]),
+    JSON.stringify(pocketLedgers[0]),
+  );
+
+  const pocketBilling = await call(userBillingGet, {
+    path: `/api/user/billing-records?page=1&size=10&request_id=vfy-pocket-${stamp}`,
+    token: pocketToken,
+  });
+  const pocketRow = (id: string) =>
+    (pocketBilling.body.items as any[] | undefined)?.find(item => item.request_id === id);
+  const quotaRow = pocketRow(pocketQuotaId);
+  const balanceRow = pocketRow(pocketBalanceId);
+  check(
+    "ledger='quota' 的账单：quota_paid = 该笔 revenue，balance_paid = 0",
+    !!quotaRow && near(quotaRow.quota_paid, 3) && quotaRow.balance_paid === 0 && near(quotaRow.revenue_amount, 3),
+    JSON.stringify(quotaRow),
+  );
+  check(
+    "ledger='balance' 的账单：balance_paid = 该笔 revenue，quota_paid = 0",
+    !!balanceRow && near(balanceRow.balance_paid, 0.5) && balanceRow.quota_paid === 0 && near(balanceRow.revenue_amount, 0.5),
+    JSON.stringify(balanceRow),
   );
   const userBillingFree = await call(userBillingGet, {
     path: "/api/user/billing-records?charge=free",
@@ -672,6 +744,13 @@ try {
   await conn.query("DELETE FROM recharge_orders WHERE user_id = ?", [userId]);
   await conn.query("DELETE FROM credit_transactions WHERE user_id = ?", [userId]);
   await conn.query("DELETE FROM users WHERE id = ?", [userId]);
+
+  if (pocketUserId) {
+    await conn.query("DELETE FROM billing_records WHERE user_id = ?", [pocketUserId]);
+    await conn.query("DELETE FROM credit_transactions WHERE user_id = ?", [pocketUserId]);
+    await conn.query("DELETE FROM subscriptions WHERE user_id = ?", [pocketUserId]);
+    await conn.query("DELETE FROM users WHERE id = ?", [pocketUserId]);
+  }
   await conn.end();
 }
 

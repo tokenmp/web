@@ -8,7 +8,8 @@ import { listBillingRecords, parseDateParam } from "~/lib/records";
  * GET /api/user/billing-records（openapi 写作 /user/billing_records）
  *
  * 我的账单。查询参数：page、size、model、request_id（模糊）、status（success / error）、
- * charge（free / paid）。每项在 BillingRecord 基础上多带 credit_paid 与 balance_paid。
+ * charge（free / paid）。每项在 BillingRecord 基础上多带 quota_paid 与 balance_paid：
+ * 这笔钱是从订阅额度里出的还是从余额里出的，一笔只会落在其中一个口袋。
  */
 export async function GET({ request }: APIEvent) {
   const guard = await guardUser(request);
