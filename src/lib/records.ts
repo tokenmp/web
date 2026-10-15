@@ -492,18 +492,19 @@ export function serializeRequestRecord(row: RequestRecordRow) {
 }
 
 /**
- * 计费流水的对外形状。paySplit 为真时补 credit_paid / balance_paid —— 
+ * 计费流水的对外形状。paySplit 为真时补 quota_paid / balance_paid ——
  * 本机没有把每笔账单和某条 credit_transactions 关联起来，只能按 ledger 推：
- * 走订阅额度的算信用支付，走余额的算余额支付。
+ * ledger='quota' 的整笔记订阅额度付掉的部分，'balance' 的整笔记余额付掉的部分。
+ * 一笔调用只落一种 ledger，所以两个字段里恒有一个是 0；ledger 为空的两个都是 0。
  */
 export function serializeBillingRecord(row: BillingRecordRow, options?: { paySplit?: boolean }) {
   const revenue = Number(row.revenueAmount);
   const split =
     row.ledger === "quota"
-      ? { credit_paid: revenue, balance_paid: 0 }
+      ? { quota_paid: revenue, balance_paid: 0 }
       : row.ledger === "balance"
-        ? { credit_paid: 0, balance_paid: revenue }
-        : { credit_paid: 0, balance_paid: 0 };
+        ? { quota_paid: 0, balance_paid: revenue }
+        : { quota_paid: 0, balance_paid: 0 };
 
   return {
     id: row.id,

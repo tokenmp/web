@@ -4123,7 +4123,14 @@ paths:
           description: 其他取值忽略
       responses:
         "200":
-          description: 一页账单，每项多带 credit_paid 与 balance_paid
+          description: |
+            一页账单，每项多带 quota_paid 与 balance_paid。
+
+            **与线上的一处有意差异（改名，不是新增字段）**：线上这两个字段叫
+            `credit_paid` 与 `balance_paid`，本机把 `credit_paid` 改名成了 `quota_paid`
+            —— 它装的一直是订阅额度付掉的部分，线上那个名字与口袋对不上。
+            值一个字没动，只是同一个口袋换了个名字。**拿这份文档对线上时，线上回的仍是
+            `credit_paid`**；线上若也要改名，得等它的源码先改。
           content:
             application/json:
               schema:
@@ -4138,8 +4145,8 @@ paths:
                             - $ref: "#/components/schemas/BillingRecord"
                             - type: object
                               properties:
-                                credit_paid: { type: number, description: 用信用额度付的部分 }
-                                balance_paid: { type: number, description: 用余额付的部分 }
+                                quota_paid: { type: number, description: "用订阅额度付掉的部分。本机改名，线上仍叫 credit_paid" }
+                                balance_paid: { type: number, description: 用余额付掉的部分 }
 
   /user/request_records:
     get:
