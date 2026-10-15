@@ -10,6 +10,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { Dialog } from "~/components/ui/dialog";
+import { ErrorState } from "~/components/ui/error-state";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Segmented } from "~/components/ui/segmented";
@@ -142,9 +143,11 @@ export default function PanelKeys() {
       <Title>我的密钥 | tokenmp web</Title>
 
       <Show when={error()}>
-        <p class="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
-          {error()}
-        </p>
+        <ErrorState
+          class="mb-4 rounded-lg border border-destructive/30"
+          message={error()!}
+          onRetry={() => void reload()}
+        />
       </Show>
       <Show when={notice()}>
         <p class="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
@@ -321,12 +324,14 @@ export default function PanelKeys() {
         </div>
       </Dialog>
 
-      {/* 明文只在这里出现一次 */}
+      {/* 明文只在这里出现一次，关掉就只剩前后缀。与控制台那两处同一个道理：
+          点遮罩、按 Esc、点右上角的 X 都不关，必须走「复制」或「我已保存」 */}
       <Dialog
         open={created() !== null}
         onOpenChange={open => {
           if (!open) setCreated(null);
         }}
+        dismissible={false}
         title="密钥已创建"
         description="明文密钥仅在创建后展示一次，请妥善保存。"
         footer={

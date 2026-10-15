@@ -8,6 +8,7 @@ import { Section } from "~/components/panel/section";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
+import { ErrorState } from "~/components/ui/error-state";
 import { PagerIfNeeded } from "~/components/ui/pager";
 import { Segmented } from "~/components/ui/segmented";
 import { Select } from "~/components/ui/select";
@@ -133,9 +134,12 @@ export default function PanelRequestRecords() {
         </Toolbar>
 
         <Show when={list.error()}>
-          <p class="border-b bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
-            {list.error()}
-          </p>
+          <ErrorState
+            variant="inline"
+            class="border-b px-4"
+            message={list.error()!}
+            onRetry={() => void list.reload()}
+          />
         </Show>
 
         <ResponsiveTable
@@ -200,8 +204,14 @@ export default function PanelRequestRecords() {
               请求详情
             </Button>
           )}
-          empty={hasFilter() ? "没有匹配的记录" : "暂无请求记录"}
-          emptyDescription={hasFilter() ? "试试调整搜索词或筛选条件" : "还没有产生过 API 调用"}
+          empty={list.loading() ? "正在加载…" : hasFilter() ? "没有匹配的记录" : "暂无请求记录"}
+          emptyDescription={
+            list.loading()
+              ? undefined
+              : hasFilter()
+                ? "试试调整搜索词或筛选条件"
+                : "还没有产生过 API 调用"
+          }
         />
 
         <PagerIfNeeded

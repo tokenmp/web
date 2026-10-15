@@ -6,6 +6,7 @@ import { ResponsiveTable } from "~/components/panel/responsive-table";
 import { Badge } from "~/components/ui/badge";
 import { Card } from "~/components/ui/card";
 import { DecimalSplit } from "~/components/ui/decimal-split";
+import { ErrorState } from "~/components/ui/error-state";
 import { PagerIfNeeded } from "~/components/ui/pager";
 import { detailText, txSourceMeta } from "~/lib/panel-labels";
 import { createClientResource } from "~/lib/resource";
@@ -78,9 +79,11 @@ export default function PanelCredits() {
       <Title>余额明细 | tokenmp web</Title>
 
       <Show when={error()}>
-        <p class="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive-text" role="alert">
-          {error()}
-        </p>
+        <ErrorState
+          class="mb-4 rounded-lg border border-destructive/30"
+          message={error()!}
+          onRetry={() => void reload()}
+        />
       </Show>
 
       <div class="grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-3">

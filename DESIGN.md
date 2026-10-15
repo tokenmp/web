@@ -104,7 +104,7 @@
 
 ### 基础组件
 
-放在 `src/components/ui/`，写法沿用 shadcn/ui：`class-variance-authority` 管变体，`tailwind-merge` 合并外部传入的 `class`。遮罩层的焦点陷阱、Esc 关闭、点遮罩关闭、背景滚动锁定交给 `@kobalte/core` 的 Dialog 原语，这里只套样式。
+放在 `src/components/ui/`，写法沿用 shadcn/ui：`class-variance-authority` 管变体，`tailwind-merge` 合并外部传入的 `class`。遮罩层的焦点陷阱、Esc 关闭、点遮罩关闭、背景滚动锁定交给 `@kobalte/core` 的 Dialog 原语，这里只套样式。原语给的是前两条，右上角的 X 是本仓库自己渲染的，所以 `Dialog` 的 `dismissible={false}` 要单独把它一起判掉 —— 只在原语上拦，X 照样关得掉。
 
 | 组件 | 文件 | 变体 |
 | --- | --- | --- |
@@ -119,11 +119,12 @@
 | Textarea | [textarea.tsx](src/components/ui/textarea.tsx) | 单一形态，样式跟 Input 一致，用于公告正文 |
 | Select | [select.tsx](src/components/ui/select.tsx) | 下拉选择，Kobalte 原语。对外只暴露「选项值字符串」（`string \| null`），Kobalte 认的选项对象换算收在组件里。放在 Dialog 里要传 `portal={false}`，标签交给它的 `label` 属性渲染（Kobalte 只认自己注册的标签 id） |
 | Switch | [switch.tsx](src/components/ui/switch.tsx) | 开关，Kobalte 原语，真实 checkbox 藏在圆点下面（键盘与读屏都能用） |
-| EmptyState | [empty-state.tsx](src/components/ui/empty-state.tsx) | 空态：标题、说明与可选操作，失败态另写 |
+| EmptyState | [empty-state.tsx](src/components/ui/empty-state.tsx) | 空态：标题、说明与可选操作。与失败态分开：「没有数据」是等，失败态是重试 |
+| ErrorState | [error-state.tsx](src/components/ui/error-state.tsx) | 失败态：说明失败原因，`onRetry` 给一个就地重试的入口。`variant="inline"` 用于卡片内、表格行里这类窄场景；不传 `onRetry` 就只说明不画按钮（表单错误这类重试没用的场合） |
 | DecimalSplit | [decimal-split.tsx](src/components/ui/decimal-split.tsx) | 大数拆分：整数部分常规、小数部分更小更淡 |
 | Pager | [pager.tsx](src/components/ui/pager.tsx) | 分页条，带每页条数下拉；`PagerIfNeeded` 只在一页放不下时才出现。横向内边距收在组件里（16px），调用方不再包一层 `px-4` / `px-5` 的外壳；已经在带内边距的底栏里时传 `class="px-0"` |
 | Toolbar | [toolbar.tsx](src/components/ui/toolbar.tsx) | 卡片顶部那一条筛选与操作行，配套 `ToolbarSearch`、`ToolbarSpacer`、`ToolbarDivider`。行内控件的标签一律画在控件左边（Select 传 `labelPlacement="inline"`），分段控件不给可见标签，两个分段之间插分隔线。末尾的控件用 `ToolbarSpacer` 顶到最右，它在手机上也要渲染；末尾控件会单独落到下一行时用 `ml-auto` |
-| Dialog | [dialog.tsx](src/components/ui/dialog.tsx) | 居中模态，底部操作区可自定义，配套 `DialogClose` |
+| Dialog | [dialog.tsx](src/components/ui/dialog.tsx) | 居中模态，底部操作区可自定义，配套 `DialogClose`。`dismissible={false}` 给「关了就拿不回来」的弹窗（明文密钥只展示一次）用：点遮罩、按 Esc、点右上角的 X 三条路一起堵上，只能靠 `footer` 里的按钮关 |
 | Sheet | [sheet.tsx](src/components/ui/sheet.tsx) | `side="right"` 右侧抽屉（手机 92vw、平板 26rem、桌面 32rem），`side="bottom"` 底部抽屉（手机端放操作选择），配套 `SheetClose`；宽度可用 `class` 覆盖。两种用法：给一个 `trigger` 点开，或传 `open` 与 `onOpenChange` 自己控制、不要触发器 —— 一个抽屉要被多行触发时用后者，比每行各建一个 Dialog 轻。`triggerClass` 可以覆盖触发器的按钮样式（整行当触发器时要撑满、去掉描边） |
 
 ### 布局组件

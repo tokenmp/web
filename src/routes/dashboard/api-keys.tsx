@@ -12,6 +12,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { Dialog } from "~/components/ui/dialog";
+import { ErrorState } from "~/components/ui/error-state";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Select } from "~/components/ui/select";
@@ -130,6 +131,9 @@ export default function DashboardApiKeys() {
     if (first) selectUser(first);
   });
 
+  /** 待确认停用的密钥。停用可逆，但会立刻打断对方正在跑的集成，值得先问一句 */
+  const [pendingDisable, setPendingDisable] = createSignal<AdminApiKey | null>(null);
+
   const run = async (key: AdminApiKey, action: () => Promise<unknown>, fallback: string) => {
     setBusyId(key.id);
     setNotice("");
@@ -242,29 +246,26 @@ export default function DashboardApiKeys() {
         </Show>
 
         <Show when={users.error()}>
-          <div class="border-b px-4 py-6 text-center text-sm">
-            <p class="text-muted-foreground">{users.error()}</p>
-            <Button variant="outline" size="sm" class="mt-3" onClick={() => void users.reload()}>
-              重新加载用户
-            </Button>
-          </div>
+          <ErrorState
+            variant="inline"
+            class="border-b px-4"
+            message={users.error()!}
+            retryLabel="重新加载用户"
+            onRetry={() => void users.reload()}
+          />
         </Show>
 
         <Show when={keysError()}>
-          <div class="border-b px-4 py-6 text-center text-sm">
-            <p class="text-muted-foreground">{keysError()}</p>
-            <Button
-              variant="outline"
-              size="sm"
-              class="mt-3"
-              onClick={() => {
-                const user = selected();
-                if (user) void loadKeys(user.id);
-              }}
-            >
-              重新加载密钥
-            </Button>
-          </div>
+          <ErrorState
+            variant="inline"
+            class="border-b px-4"
+            message={keysError()!}
+            retryLabel="重新加载密钥"
+            onRetry={() => {
+              const user = selected();
+              if (user) void loadKeys(user.id);
+            }}
+          />
         </Show>
 
         <Table class="border-b" tableClass="min-w-[1000px]">
@@ -322,13 +323,14 @@ export default function DashboardApiKeys() {
                         size="sm"
                         disabled={busyId() === key.id}
                         aria-label={`${key.status === 0 ? "启用" : "停用"}密钥：${key.name ?? maskedKey(key)}`}
-                        onClick={() =>
-                          run(
-                            key,
-                            () => updateApiKey(key.id, { status: key.status === 0 ? 1 : 0 }),
-                            "操作失败",
-                          )
-                        }
+                        onClick={() => {
+                          // 启用是恢复，直接做；停用会立刻打断对方的调用，先确认
+                          if (key.status === 0) {
+                            void run(key, () => updateApiKey(key.id, { status: 1 }), "操作失败");
+                          } else {
+                            setPendingDisable(key);
+                          }
+                        }}
                       >
                         {key.status === 0 ? "启用" : "停用"}
                       </Button>
@@ -400,6 +402,33 @@ export default function DashboardApiKeys() {
       />
 
       <Dialog
+        open={pendingDisable() !== null}
+        onOpenChange={open => {
+          if (!open) setPendingDisable(null);
+        }}
+        title="停用这把密钥？"
+        description={`「${pendingDisable()?.name ?? (pendingDisable() ? maskedKey(pendingDisable()!) : "")}」停用后立刻开始被网关拒掉，正在用它的集成会当场失败。密钥本身留着，随时能再启用。`}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setPendingDisable(null)}>
+              取消
+            </Button>
+            <Button
+              disabled={busyId() === pendingDisable()?.id}
+              onClick={() => {
+                const key = pendingDisable();
+                if (!key) return;
+                setPendingDisable(null);
+                void run(key, () => updateApiKey(key.id, { status: 0 }), "操作失败");
+              }}
+            >
+              确认停用
+            </Button>
+          </>
+        }
+      />
+
+      <Dialog
         open={pendingDelete() !== null}
         onOpenChange={open => {
           if (!open) setPendingDelete(null);
@@ -422,11 +451,14 @@ export default function DashboardApiKeys() {
         }
       />
 
+      {/* 明文只出现这一次：遮罩、Esc 与右上角的 X 都不关，
+          必须显式点「我已经保存好了」 */}
       <Dialog
         open={issued() !== null}
         onOpenChange={open => {
           if (!open) setIssued(null);
         }}
+        dismissible={false}
         title="密钥已签发，请立刻保存"
         description="明文只在这一个弹窗里出现一次，关掉之后任何接口都取不回原文，只能删了重签。"
         footer={

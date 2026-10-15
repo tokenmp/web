@@ -18,10 +18,13 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-9 px-4 py-2",
+        // 默认尺寸与输入框、下拉触发器、分段控件同高：手机 40px、桌面 36px
+        // （DESIGN.md「控件高度」）。少了 sm: 这一档，工具条里的按钮在手机上会比
+        // 旁边的输入框矮 4px。
+        default: "h-10 px-4 py-2 sm:h-9",
         sm: "h-8 rounded-md px-3 text-xs",
-        lg: "h-10 rounded-md px-8",
-        icon: "size-9",
+        lg: "h-11 rounded-md px-8 sm:h-10",
+        icon: "size-10 sm:size-9",
       },
     },
     defaultVariants: {

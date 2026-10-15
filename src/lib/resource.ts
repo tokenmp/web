@@ -8,6 +8,11 @@ import { createSignal, onMount } from "solid-js";
  * 数据，晚一个微任务到客户端再取，代价只是首帧没有内容。
  *
  * reload 给「操作失败后重新拉一次」用，比如通知标已读失败要跟服务端对齐。
+ *
+ * 失败时不保留上一次的数据：留着的话，页面上会同时出现「请求失败」和一份看不出
+ * 已经过期的旧列表，读起来像「这就是现在的数据」。宁可空着配错误提示，也不要
+ * 把旧结果当成本次结果。要显示旧数据的场景（筛选条件改变后的重新取数）由调用方
+ * 自己决定，不在这里做。
  */
 export function createClientResource<T>(loader: () => Promise<T>, initial: T) {
   const [data, setData] = createSignal<T>(initial);
@@ -22,6 +27,7 @@ export function createClientResource<T>(loader: () => Promise<T>, initial: T) {
       const value = await loader();
       setData(() => value);
     } catch (err) {
+      setData(() => initial);
       setError(err instanceof Error ? err.message : "加载失败");
     } finally {
       setLoading(false);
