@@ -1,4 +1,7 @@
 import { Title } from "@solidjs/meta";
+import ArrowDown from "lucide-solid/icons/arrow-down";
+import ArrowDownUp from "lucide-solid/icons/arrow-down-up";
+import ArrowUp from "lucide-solid/icons/arrow-up";
 import Plus from "lucide-solid/icons/plus";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 
@@ -44,6 +47,18 @@ import { createClientResource } from "~/lib/resource";
 import { BUDGET_PERIOD_LABEL, formatCurrency, formatDateTime, formatNumber } from "~/lib/utils";
 
 type AccountAction = "recharge" | "adjust" | "credit" | "budget";
+
+/** 状态筛选。与用户管理页同一套口径：all 就是不传，1/0 交给服务端 */
+const STATUS_TABS = [
+  { value: "all", label: "全部" },
+  { value: "1", label: "正常" },
+  { value: "0", label: "已停用" },
+] as const;
+
+type StatusFilter = (typeof STATUS_TABS)[number]["value"];
+
+/** 排序方向。接口只认 asc，其余一律降序（openapi 就是这么定的） */
+type OrderValue = "asc" | "desc";
 
 const ACTION_TITLES: Record<AccountAction, string> = {
   recharge: "给该用户代充",
@@ -106,6 +121,10 @@ export default function DashboardBalances() {
   const [page, setPage] = createSignal(1);
   const [size, setSize] = createSignal(20);
   const [keyword, setKeyword] = createSignal("");
+  const [status, setStatus] = createSignal<StatusFilter>("all");
+  // 授信排序：默认不按授信排（服务端落回注册时间），点表头才开始按授信排
+  const [sort, setSort] = createSignal<"credit_limit" | undefined>(undefined);
+  const [order, setOrder] = createSignal<OrderValue>("desc");
 
   const accounts = createClientResource<{ items: BalanceAccount[]; total: number }>(
     () =>
@@ -113,9 +132,30 @@ export default function DashboardBalances() {
         page: page(),
         size: size(),
         keyword: keyword().trim() || undefined,
+        // 「全部」就是不传，服务端当不过滤；1/0 交给服务端筛
+        status: status() === "all" ? undefined : (Number(status()) as 0 | 1),
+        sort: sort(),
+        order: sort() ? order() : undefined,
       }),
     { items: [], total: 0 },
   );
+
+  /** 筛选条件变了旧的页码未必还在，一律回到第一页再取 */
+  const reloadFromFirstPage = () => {
+    setPage(1);
+    void accounts.reload();
+  };
+
+  /** 点「授信」表头：第一次按降序排授信，再点一次翻转方向 */
+  const toggleCreditSort = () => {
+    if (sort() !== "credit_limit") {
+      setSort("credit_limit");
+      setOrder("desc");
+    } else {
+      setOrder(prev => (prev === "desc" ? "asc" : "desc"));
+    }
+    reloadFromFirstPage();
+  };
 
   // 搜索是服务端做的，输入即查会把每个字符都变成一次请求，等手停下来再发。
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -148,7 +188,12 @@ export default function DashboardBalances() {
       {
         label: "匹配账户",
         value: formatNumber(accounts.data().total),
-        hint: "按用户名模糊匹配",
+        hint:
+          status() === "all"
+            ? "按用户名模糊匹配"
+            : status() === "1"
+              ? "仅正常账号"
+              : "仅已停用账号",
       },
       {
         label: "本页可用余额",
@@ -205,7 +250,19 @@ export default function DashboardBalances() {
               onInput={onSearchInput}
               class="sm:max-w-xs"
             />
+
+            <Segmented
+              options={STATUS_TABS}
+              value={status()}
+              onChange={value => {
+                setStatus(value);
+                reloadFromFirstPage();
+              }}
+              ariaLabel="按账户状态筛选"
+            />
+
             <ToolbarSpacer />
+
             <p class="text-sm text-muted-foreground">
               代充是 source=recharge 的入账，调账可正可负，两者都允许透支
             </p>
@@ -225,7 +282,43 @@ export default function DashboardBalances() {
               <TableRow>
                 <TableHead>用户</TableHead>
                 <TableHead class="text-right">可用余额</TableHead>
-                <TableHead class="text-right">授信</TableHead>
+                {/*
+                  授信是这一页唯一能排序的列，表头直接当按钮用：图标三态（未排序、
+                  降序、升序），aria-sort 挂在 th 上交给读屏。后端只认 credit_limit
+                  这一个排序列，所以不做成「每列可点」的通用排序头。
+                */}
+                <TableHead
+                  class="text-right"
+                  aria-sort={
+                    sort() ? (order() === "asc" ? "ascending" : "descending") : "none"
+                  }
+                >
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 rounded-sm font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    onClick={toggleCreditSort}
+                  >
+                    授信
+                    <Show
+                      when={sort()}
+                      fallback={<ArrowDownUp class="size-3.5 opacity-50" aria-hidden="true" />}
+                    >
+                      <Show
+                        when={order() === "asc"}
+                        fallback={<ArrowDown class="size-3.5" aria-hidden="true" />}
+                      >
+                        <ArrowUp class="size-3.5" aria-hidden="true" />
+                      </Show>
+                    </Show>
+                    <span class="sr-only">
+                      {sort()
+                        ? order() === "asc"
+                          ? "，当前升序，点击改为降序"
+                          : "，当前降序，点击改为升序"
+                        : "，点击按授信降序排列"}
+                    </span>
+                  </button>
+                </TableHead>
                 <TableHead>预算</TableHead>
                 <TableHead>套餐</TableHead>
                 <TableHead class="text-right">操作</TableHead>
@@ -364,6 +457,7 @@ export default function DashboardBalances() {
         targets={targets()}
         total={accounts.data().total}
         keyword={keyword().trim() || undefined}
+        status={status() === "all" ? undefined : (Number(status()) as 0 | 1)}
         onOpenChange={setBatchOpen}
         onSaved={() => void accounts.reload()}
       />
@@ -639,6 +733,8 @@ function BatchRechargeDialog(props: {
   targets: { id: number; name: string }[];
   total: number;
   keyword?: string;
+  /** 与列表页同一个状态筛选。「全部筛选结果」要跟它一致，否则会充到没显示出来的账户上 */
+  status?: 0 | 1;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 }) {
@@ -681,7 +777,7 @@ function BatchRechargeDialog(props: {
     try {
       let list = props.targets;
       if (scope() === "all") {
-        list = await fetchAllBalanceAccounts({ keyword: props.keyword });
+        list = await fetchAllBalanceAccounts({ keyword: props.keyword, status: props.status });
         if (list.length === 0) {
           setError("当前筛选下没有账户");
           return;

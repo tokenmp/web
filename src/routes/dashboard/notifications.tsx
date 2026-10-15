@@ -23,7 +23,7 @@ import {
 } from "~/components/ui/table";
 import { Toolbar, ToolbarSpacer } from "~/components/ui/toolbar";
 import { Textarea } from "~/components/ui/textarea";
-import { fetchAdminUsers, type AdminUser } from "~/lib/admin-keys";
+import { fetchAllAdminUsers, type AdminUser } from "~/lib/admin-notifications";
 import {
   fetchAdminNotifications,
   sendAdminNotifications,
@@ -86,9 +86,13 @@ export default function DashboardNotifications() {
   const [okNotice, setOkNotice] = createSignal("");
 
 
-  const users = createClientResource<AdminUser[]>(
-    () => fetchAdminUsers({ size: 100 }).then(result => result.items),
-    [],
+  // 这一页有两个地方要按 user_id 找名字：表格里的「接收用户」列，和表单里那个下拉。
+  // 只取第一页 100 条的话，名册一超过 100，整列就会退化成「用户 #id」——
+  // 看起来像是这些通知发给了一个查不到的账号。所以这里取回整份名册，
+  // 并让被截断这件事自己可见（见下面那条提示）。
+  const users = createClientResource(
+    () => fetchAllAdminUsers(),
+    { items: [] as AdminUser[], total: 0, truncated: false },
   );
 
   const feed = createClientResource(
@@ -102,11 +106,11 @@ export default function DashboardNotifications() {
     { items: [] as AdminNotification[], total: 0 },
   );
 
-  const userName = createMemo(() => new Map(users.data().map(user => [user.id, user.name])));
+  const userName = createMemo(() => new Map(users.data().items.map(user => [user.id, user.name])));
 
   const userOptions = createMemo(() => [
     { value: ALL_USERS, label: "全部用户" },
-    ...users.data().map(user => ({
+    ...users.data().items.map(user => ({
       value: String(user.id),
       label: user.email ? `${user.name}（${user.email}）` : user.name,
     })),
@@ -161,6 +165,15 @@ export default function DashboardNotifications() {
         {/* 用户列表挂了不会让这一页整体不可用（投递记录还在），但接收用户的筛选和
             用户名那一列都会退化：下拉只剩「全部用户」，表格里全变成「用户 #id」。
             单独摆一条，别让管理员以为自己没有别的用户 */}
+        <Show when={users.data().truncated}>
+          {/* 名册太大、翻页取不完时留个口子。悄悄少几页正是这一条要修的毛病 */}
+          <p class="border-b bg-warning/15 px-4 py-2.5 text-sm text-warning-text" role="status">
+            账号太多，用户名单只取了前 {formatNumber(users.data().items.length)} 个
+            （共 {formatNumber(users.data().total)} 个），靠后的投递记录会显示成「用户 #id」。
+            要精确找某个人，用下面的「接收用户」筛选或直接按用户 id 查。
+          </p>
+        </Show>
+
         <Show when={users.error()}>
           <ErrorState
             variant="inline"
@@ -330,8 +343,9 @@ export default function DashboardNotifications() {
 
       <NotificationForm
         open={formOpen()}
-        users={users.data()}
+        users={users.data().items}
         usersError={users.error() ?? undefined}
+        usersTruncated={users.data().truncated}
         onOpenChange={setFormOpen}
         onSent={created => {
           setNotice("");
@@ -350,6 +364,11 @@ function NotificationForm(props: {
   users: AdminUser[];
   /** 用户列表取不到时下拉只剩「全部用户」。说出来，别让人以为是加载慢 */
   usersError?: string;
+  /**
+   * 用户列表被截断了（名册太大没取完）。此时「不在用户列表里」不再等于「用户不存在」，
+   * 批量发送的那句预检提示要说清这一点，否则会把真实存在的 id 误报成不存在。
+   */
+  usersTruncated?: boolean;
   onOpenChange: (open: boolean) => void;
   onSent: (created: number) => void;
 }) {
@@ -511,7 +530,9 @@ function NotificationForm(props: {
                   已识别 {formatNumber(batchIds().length)} 个 id
                   <Show when={batchUnknown().length > 0}>
                     {" "}
-                    · 其中 {batchUnknown().join("、")} 不在用户列表里，接口会整批拒绝
+                    · 其中 {batchUnknown().join("、")}
+                    {props.usersTruncated ? " 不在已加载的用户名单里" : " 不在用户列表里"}
+                    ，接口会整批拒绝
                   </Show>
                 </p>
               </div>

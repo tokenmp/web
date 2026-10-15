@@ -101,9 +101,18 @@ function statusVariant(status: number): "success" | "destructive" {
   return status === 1 ? "success" : "destructive";
 }
 
-function planName(plans: PlanOption[], planId: number | null) {
+/**
+ * plan_id 到套餐名。
+ *
+ * 找不到有两种原因，界面上不能混成一句 `#3`：
+ * 名单取到了但这个 id 不在里面（套餐下架或停用，/api/admin/plans 默认只回 status=1），
+ * 和名单根本没取到（此时所有 id 都会回落成编号）。failed 为真时把后者写出来。
+ */
+function planName(plans: PlanOption[], planId: number | null, failed = false) {
   if (planId === null) return "未绑套餐";
-  return plans.find(plan => plan.id === planId)?.name ?? `#${planId}`;
+  const found = plans.find(plan => plan.id === planId)?.name;
+  if (found) return found;
+  return failed ? `#${planId}（套餐名没取到）` : `#${planId}`;
 }
 
 /** 预算要先判「启用了没」与「金额是不是 0」，两个条件任一不成立都算没设 */
@@ -153,7 +162,8 @@ export default function DashboardUsers() {
     { items: [], total: 0 },
   );
 
-  // 套餐下拉的数据源。取不到也不影响页面：plan_id 会退化成 #id 显示
+  // 套餐下拉的数据源。取数失败时 plan_id 只能显示成 #id，所以要单独把失败态说出来，
+  // 否则「编号 3 的套餐」和「名字没取到」在界面上长得一模一样
   const plans = createClientResource<PlanOption[]>(fetchPlanOptions, []);
 
   // 关键词敲完停 300ms 再发请求，避免每个字符都打一次接口
@@ -326,6 +336,18 @@ export default function DashboardUsers() {
           />
         </Show>
 
+        {/* 套餐名单挂了不会让这一页不可用（列表照旧），但「套餐」那一列会整列退化成编号。
+            单独摆一条，否则管理员分不出「编号 3 的套餐」和「名字没取到」 */}
+        <Show when={plans.error()}>
+          <ErrorState
+            variant="inline"
+            class="border-b px-4"
+            message={`套餐名单读取失败，下面「套餐」列显示的是编号：${plans.error()}`}
+            retryLabel="重新加载套餐"
+            onRetry={() => void plans.reload()}
+          />
+        </Show>
+
         <Table class="border-b" tableClass="min-w-[1100px]">
           <TableHeader>
             <TableRow>
@@ -348,7 +370,7 @@ export default function DashboardUsers() {
                     <p class="mt-0.5 text-xs text-muted-foreground">{user.email ?? "未填邮箱"}</p>
                   </TableCell>
                   <TableCell class="text-muted-foreground">
-                    {planName(plans.data(), user.plan_id)}
+                    {planName(plans.data(), user.plan_id, plans.error() !== null)}
                   </TableCell>
                   <TableCell class="text-right tabular-nums">
                     {formatCurrency(user.balance)}
@@ -372,6 +394,7 @@ export default function DashboardUsers() {
                       <UserDetailSheet
                         user={user}
                         plans={plans.data()}
+                        plansFailed={plans.error() !== null}
                         onChanged={() => void users.reload()}
                       />
 
@@ -440,6 +463,7 @@ export default function DashboardUsers() {
         open={createOpen()}
         user={null}
         plans={plans.data()}
+        plansFailed={plans.error() !== null}
         onOpenChange={setCreateOpen}
         onSaved={() => void users.reload()}
       />
@@ -477,7 +501,13 @@ export default function DashboardUsers() {
 }
 
 /** 行内「详情」入口。抽屉内容是一个独立组件，打开时才挂载并发请求 */
-function UserDetailSheet(props: { user: UserView; plans: PlanOption[]; onChanged: () => void }) {
+function UserDetailSheet(props: {
+  user: UserView;
+  plans: PlanOption[];
+  /** 套餐名单没取到，抽屉里也会显示编号，一起带进去 */
+  plansFailed: boolean;
+  onChanged: () => void;
+}) {
   return (
     <Sheet
       side="right"
@@ -486,7 +516,12 @@ function UserDetailSheet(props: { user: UserView; plans: PlanOption[]; onChanged
       description={`${props.user.email ?? "未填邮箱"} · 注册于 ${formatDate(props.user.created_at)}`}
       footer={<SheetClose>关闭</SheetClose>}
     >
-      <UserDetail user={props.user} plans={props.plans} onChanged={props.onChanged} />
+      <UserDetail
+        user={props.user}
+        plans={props.plans}
+        plansFailed={props.plansFailed}
+        onChanged={props.onChanged}
+      />
     </Sheet>
   );
 }
@@ -497,7 +532,12 @@ function UserDetailSheet(props: { user: UserView; plans: PlanOption[]; onChanged
  * Kobalte 的抽屉只在打开时才把内容挂到 DOM，所以这里的 createClientResource
  * 天然是「打开才拉详情与密钥」，不会在列表渲染时给每个用户多发一次请求。
  */
-function UserDetail(props: { user: UserView; plans: PlanOption[]; onChanged: () => void }) {
+function UserDetail(props: {
+  user: UserView;
+  plans: PlanOption[];
+  plansFailed: boolean;
+  onChanged: () => void;
+}) {
   // 列表行本身就是一份 UserView，先拿来当首帧，同时再请求一次拿最新的
   const detail = createClientResource<UserView>(() => fetchUser(props.user.id), props.user);
   const keys = createClientResource<AdminApiKey[]>(() => fetchUserKeys(props.user.id), []);
@@ -596,7 +636,7 @@ function UserDetail(props: { user: UserView; plans: PlanOption[]; onChanged: () 
               <Badge variant={statusVariant(user().status)}>{userStatusLabel(user().status)}</Badge>
             }
           />
-          <DetailRow label="套餐" value={planName(props.plans, user().plan_id)} />
+          <DetailRow label="套餐" value={planName(props.plans, user().plan_id, props.plansFailed)} />
           <DetailRow label="注册时间" value={formatDateTime(user().created_at)} />
           <DetailRow label="更新时间" value={formatDateTime(user().updated_at)} />
         </dl>
@@ -658,7 +698,7 @@ function UserDetail(props: { user: UserView; plans: PlanOption[]; onChanged: () 
         {sub => (
           <Section title="当前订阅">
             <dl class="space-y-3">
-              <DetailRow label="套餐" value={planName(props.plans, sub().plan_id)} />
+              <DetailRow label="套餐" value={planName(props.plans, sub().plan_id, props.plansFailed)} />
               <DetailRow
                 label="订阅额度类型"
                 value={sub().quota_kind === "requests" ? "按次数" : "按金额"}
@@ -738,6 +778,7 @@ function UserDetail(props: { user: UserView; plans: PlanOption[]; onChanged: () 
         open={editOpen()}
         user={user()}
         plans={props.plans}
+        plansFailed={props.plansFailed}
         onOpenChange={setEditOpen}
         onSaved={afterChange}
       />
@@ -844,6 +885,8 @@ function UserFormDialog(props: {
   open: boolean;
   user: UserView | null;
   plans: PlanOption[];
+  /** 套餐名单没取到。此时下拉里只会有「未绑套餐」，要说出来 */
+  plansFailed: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 }) {
@@ -1029,8 +1072,15 @@ function UserFormDialog(props: {
           options={planOptions()}
           value={planId()}
           onChange={setPlanId}
+          placeholder={props.plansFailed ? "套餐名单没取到" : "未绑套餐"}
           portal={false}
         />
+        <Show when={props.plansFailed}>
+          <p class="text-xs text-destructive-text" role="alert">
+            套餐名单读取失败，下拉里只剩「未绑套餐」。改套餐之前先关掉弹窗重试一次，
+            免得把已有的绑定改没了。
+          </p>
+        </Show>
 
         <Show when={notice()}>
           <p class="text-sm text-destructive-text" role="alert">

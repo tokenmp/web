@@ -78,6 +78,8 @@ export type AccountQuery = {
   page: number;
   size: number;
   keyword?: string;
+  /** 1 只看正常、0 只看已停用；不给就是不筛。取值口径与 admin-users 的 UserListParams 一致 */
+  status?: 0 | 1;
   sort?: string;
   order?: "asc" | "desc";
 };
@@ -104,6 +106,8 @@ export function fetchBalanceAccounts(input: AccountQuery) {
       page: input.page,
       size: input.size,
       keyword: input.keyword,
+      // status 是 0/1 两个值，query() 会把它变成字符串 "0"/"1" —— 后端比的就是字符串
+      status: input.status,
       sort: input.sort,
       order: input.order,
     })}`,
@@ -298,14 +302,24 @@ export async function batchRecharge(
 /**
  * 取当前筛选下的全部账户。GET /admin/users 一页最多 100，这里翻页取完。
  * 只回 id 与 name，够批量充值用，也避免把整页的预算与订阅快照都搬回来。
+ *
+ * 筛选是在服务端做的，界面手上只有当前这一页，所以参数必须与列表页保持同一套 ——
+ * 少传一个筛选条件，批量充值就会打到界面上没显示出来的账户上。
+ * 先拿 total 再按 total 翻页；两次请求之间数据变了也不会死循环。
  */
-export async function fetchAllBalanceAccounts(input: { keyword?: string } = {}) {
+export async function fetchAllBalanceAccounts(
+  input: { keyword?: string; status?: 0 | 1 } = {},
+) {
   const size = 100;
   const out: { id: number; name: string }[] = [];
   let page = 1;
-  // 先拿 total 再按 total 翻页；两次请求之间数据变了也不会死循环。
   for (;;) {
-    const res = await fetchBalanceAccounts({ page, size, keyword: input.keyword });
+    const res = await fetchBalanceAccounts({
+      page,
+      size,
+      keyword: input.keyword,
+      status: input.status,
+    });
     for (const account of res.items) out.push({ id: account.id, name: account.name });
     if (res.total <= 0 || out.length >= res.total || res.items.length === 0) break;
     page += 1;
