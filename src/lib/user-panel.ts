@@ -15,6 +15,7 @@ import {
   deleteOk,
   getData,
   getList,
+  patchOk,
   postData,
   postOk,
   query,
@@ -126,6 +127,34 @@ export function createApiKey(input: NewApiKeyInput) {
 
 export function deleteApiKey(id: number) {
   return deleteOk(`/api/user/api_keys/${id}`);
+}
+
+/** PATCH 的 body，按子集传：只改传了的字段。与 admin-keys 的 ApiKeyPatch 同形 */
+export type ApiKeyPatch = {
+  status?: number;
+  name?: string | null;
+  expires_at?: string | null;
+  model_whitelist?: string[] | null;
+  rate_limit_per_min?: number | null;
+};
+
+/**
+ * 改自己名下的客户端密钥。服务端按 user_id 收窄，改别人的 id 会命中 0 行、当不存在回 404。
+ *
+ * 用 patchOk 而不是 patchData：页面改完总是重新拉一次列表，不消费响应体，
+ * 这样后端回 { data } 还是 { ok } 都能用（与控制台那份同一条理由）。
+ * 停用请用 `{ status: 0 }`，别拿删除冒充 —— 停用之后列表里仍看得到、状态还标着停用。
+ */
+export function updateApiKey(id: number, patch: ApiKeyPatch) {
+  return patchOk(`/api/user/api_keys/${id}`, patch);
+}
+
+/** 模型白名单输入框：逗号、中文逗号、空白都当分隔符 */
+export function splitModelWhitelist(text: string) {
+  return text
+    .split(/[\s,，]+/)
+    .map(item => item.trim())
+    .filter(item => item !== "");
 }
 
 /* ---------------------------------------------------------- 余额流水 */
