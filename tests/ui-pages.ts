@@ -181,6 +181,7 @@ try {
     "/panel/request-records",
     "/panel/billing",
     "/dashboard/billing",
+    "/dashboard/request-records",
   ]) {
     const text = await visit(route);
     check(`${route} 打开后不是空白`, text.length > 40, text.slice(0, 80));
