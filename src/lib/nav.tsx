@@ -8,6 +8,7 @@ import Megaphone from "lucide-solid/icons/megaphone";
 import Package from "lucide-solid/icons/package";
 import ReceiptText from "lucide-solid/icons/receipt-text";
 import Route from "lucide-solid/icons/route";
+import ScrollText from "lucide-solid/icons/scroll-text";
 import Users from "lucide-solid/icons/users";
 import Wallet from "lucide-solid/icons/wallet";
 
@@ -44,6 +45,11 @@ export const dashboardNav: NavItem[] = [
     label: "计费",
     primary: true,
     icon: () => <ReceiptText class="size-4" />,
+  },
+  {
+    href: "/dashboard/request-records",
+    label: "调用记录",
+    icon: () => <ScrollText class="size-4" />,
   },
   { href: "/dashboard/channels", label: "渠道", icon: () => <Route class="size-4" /> },
   {

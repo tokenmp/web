@@ -77,6 +77,7 @@
 | `/dashboard/api-keys` | API 密钥，签发、停用启用、改属性、吊销 | 已实现，接了接口 |
 | `/dashboard/plans` | 套餐、模型价、订阅概览与激活列表 | 已实现，接了接口 |
 | `/dashboard/billing` | 计费流水 | 已实现，接了接口 |
+| `/dashboard/request-records` | 调用记录，可按用户、模型、状态、时间范围筛选，带详情抽屉 | 已实现，等转发侧回写数据 |
 | `/dashboard/recharge` | 充值单，可筛出未到账与失败的 | 已实现，接了接口 |
 | `/dashboard/notifications` | 通知投递与发送 | 已实现，接了接口 |
 | `/dashboard/channels` | 渠道 | 空页，接口是 remote，等转发侧 |

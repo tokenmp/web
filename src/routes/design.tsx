@@ -55,6 +55,7 @@ const pages = [
   { route: "/dashboard/api-keys", name: "API 密钥", status: "done" },
   { route: "/dashboard/plans", name: "套餐", status: "done" },
   { route: "/dashboard/billing", name: "计费", status: "done" },
+  { route: "/dashboard/request-records", name: "调用记录", status: "done" },
   { route: "/dashboard/channels", name: "渠道", status: "done" },
   { route: "/dashboard/channel-groups", name: "渠道分组", status: "done" },
   { route: "/dashboard/channel-applications", name: "渠道申请", status: "done" },
