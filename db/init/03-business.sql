@@ -2,7 +2,7 @@
 SET NAMES utf8mb4;
 SET CHARACTER SET utf8mb4;
 SET collation_connection = 'utf8mb4_0900_ai_ci';
--- 业务表：余额账本、密钥、套餐、订阅。
+-- 业务表：余额账本、客户端密钥、套餐、订阅。
 --
 -- 这一组只装业务数据 —— 管理员配置的、用户自己产生的。转发产生的用量与调用日志
 -- 另有表，等网关那侧把数据送过来再建。
@@ -83,8 +83,8 @@ CREATE TABLE IF NOT EXISTS api_keys (
 -- source 的取值与线上一致：recharge 充值、adjust 手工调账、usage 用量扣费、
 -- channel_share 分享渠道的返额、subscription 订阅扣款。
 -- 本机另加一个 refund：退给用户的钱，与 recharge 分开，对账时能单独拉出来。
--- balance_part 与 credit_part 记这次变动分别落在余额和信用上多少，
--- 正负号跟 delta 同向：入账为正表示还了多少信用/进了多少余额，扣款为负表示扣了多少。
+-- balance_part 与 credit_part 记这次变动分别落在余额和授信上多少，
+-- 正负号跟 delta 同向：入账为正表示还了多少授信/进了多少余额，扣款为负表示扣了多少。
 CREATE TABLE IF NOT EXISTS credit_transactions (
   id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id           BIGINT UNSIGNED NOT NULL,
@@ -197,13 +197,13 @@ WHERE NOT EXISTS (SELECT 1 FROM plans WHERE id = 1);
 INSERT INTO plans (id, name, mode, pricing_mode, markup_multiplier, quota_kind, quota_amount,
                    quota_period_days, overage_mode, price, currency, status, features, recommended, sort_order)
 SELECT 2, '标准版月付', 'subscription', 'markup', 1.15, 'money', 68, 30, 'bill', 68, 'CNY', 1,
-       JSON_ARRAY('每月 68 元额度', '全量模型可用', 'API 密钥 10 个', '账单与用量明细'), 0, 20
+       JSON_ARRAY('每月 68 元订阅额度', '全量模型可用', 'API 密钥 10 个', '账单与用量明细'), 0, 20
 WHERE NOT EXISTS (SELECT 1 FROM plans WHERE id = 2);
 
 INSERT INTO plans (id, name, mode, pricing_mode, markup_multiplier, quota_kind, quota_amount,
                    quota_period_days, overage_mode, price, currency, status, features, recommended, sort_order)
 SELECT 3, '专业版月付', 'subscription', 'markup', 1.1, 'money', 128, 30, 'bill', 128, 'CNY', 1,
-       JSON_ARRAY('每月 128 元额度，单价九折', '高并发通道', '上游故障自动切换', '工单优先支持'), 1, 30
+       JSON_ARRAY('每月 128 元订阅额度，单价九折', '高并发通道', '上游故障自动切换', '工单优先支持'), 1, 30
 WHERE NOT EXISTS (SELECT 1 FROM plans WHERE id = 3);
 
 INSERT INTO plans (id, name, mode, pricing_mode, markup_multiplier, quota_kind, quota_amount,
@@ -215,7 +215,7 @@ WHERE NOT EXISTS (SELECT 1 FROM plans WHERE id = 4);
 INSERT INTO plans (id, name, mode, pricing_mode, markup_multiplier, quota_kind, quota_amount,
                    quota_period_days, overage_mode, price, currency, status, features, recommended, sort_order)
 SELECT 5, '企业版年付', 'subscription', 'table', 1, 'money', 12800, 365, 'bill', 12800, 'CNY', 1,
-       JSON_ARRAY('每年 12800 元额度', '专属通道', '支持对公结算与年度合同', '99.9% 可用性承诺'), 0, 50
+       JSON_ARRAY('每年 12800 元订阅额度', '专属通道', '支持对公结算与年度合同', '99.9% 可用性承诺'), 0, 50
 WHERE NOT EXISTS (SELECT 1 FROM plans WHERE id = 5);
 
 -- subscriptions 的两组筛选索引。新库在 CREATE TABLE 里已经带了，

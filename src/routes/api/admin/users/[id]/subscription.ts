@@ -25,12 +25,12 @@ function parseId(raw: string | undefined) {
  *
  * body：{ refund?: boolean, reason?: string }，整个 body 可省略。
  *
- * 与用户自助取消 /user/plans/cancel 的区别只有一个：refund=true 时按剩余额度退款。
- * 取消动作本身一致：生效订阅置 cancelled、users.plan_id 置 null，剩余额度作废。
+ * 与用户自助取消 /user/plans/cancel 的区别只有一个：refund=true 时按剩余订阅额度退款。
+ * 取消动作本身一致：生效订阅置 cancelled、users.plan_id 置 null，剩余订阅额度作废。
  *
  * 退款口径：
- *   退款额 = 剩余额度按剩余天数折算（见 src/lib/quota.ts 的 refundableAmount）
- *   quota_kind='requests' 的额度是次数不是钱，退不回现金，一律按 0 处理
+ *   退款额 = 剩余订阅额度按剩余天数折算（见 src/lib/quota.ts 的 refundableAmount）
+ *   quota_kind='requests' 的订阅额度是次数不是钱，退不回现金，一律按 0 处理
  *   算出 0 或负数就不记账，也不回落余额
  *   记一笔 source='refund' 的流水，ref_id 指回原订阅，方便对账
  *

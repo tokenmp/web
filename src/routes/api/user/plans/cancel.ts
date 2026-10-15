@@ -13,12 +13,12 @@ import { proratedRemainingQuota } from "~/lib/quota";
  *
  * 口径（产品决定）：
  *
- *   取消**不退款**，剩余额度当场作废。
+ *   取消**不退款**，剩余订阅额度当场作废。
  *   用户端只做「停掉续订/不再可用」，钱的去向由管理员走
  *   POST /api/admin/users/{id}/subscription 退款，免得用户自助套现。
  *
- * 响应里带上折算后的剩余额度（forfeited_quota），前端可以提示
- * 「取消后将损失约 X 元额度」，让用户知道代价。
+ * 响应里带上折算后的剩余订阅额度（forfeited_quota），前端可以提示
+ * 「取消后将损失约 X 元订阅额度」，让用户知道代价。
  *
  * 当前生效订阅 = status='active' 且 period_end 未过期，取 period_end 最晚的那条。
  * 一条都没有就回 404。period_end 已过但仍标 active 的行顺手置成 expired。

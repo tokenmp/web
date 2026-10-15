@@ -274,7 +274,7 @@ try {
     path: "/api/internal/recharge-callback",
     body: { order_no: orderNo1, status: "paid" },
   });
-  check("回调缺密钥回 401", noSecret.status === 401, `status=${noSecret.status}`);
+  check("回调缺共享密钥回 401", noSecret.status === 401, `status=${noSecret.status}`);
 
   const wrongSecret = await call(callbackPost, {
     method: "POST",
@@ -282,7 +282,7 @@ try {
     headers: { "x-callback-secret": "wrong" },
     body: { order_no: orderNo1, status: "paid" },
   });
-  check("回调密钥不对回 403", wrongSecret.status === 403, `status=${wrongSecret.status}`);
+  check("回调共享密钥不对回 403", wrongSecret.status === 403, `status=${wrongSecret.status}`);
 
   const unknownOrder = await call(callbackPost, {
     method: "POST",
@@ -392,7 +392,7 @@ try {
     path: "/api/internal/records",
     body: { records: [] },
   });
-  check("摄入缺密钥回 401", noSecretIngest.status === 401, `status=${noSecretIngest.status}`);
+  check("摄入缺共享密钥回 401", noSecretIngest.status === 401, `status=${noSecretIngest.status}`);
 
   const badShape = await call(ingestPost, {
     method: "POST",

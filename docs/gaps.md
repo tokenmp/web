@@ -57,7 +57,7 @@
 本机已实现的端点共 **71 个**，其中 56 个标 `local`、15 个标 `local-only`：
 
 - 认证 5 个（注册、登录、登出、当前用户、改密码）
-- 用户管理 12 个（`/admin/users` 的增删改查、预算、订阅、密钥签发与吊销）
+- 用户管理 12 个（`/admin/users` 的增删改查、预算、订阅、客户端密钥签发与吊销）
 - 余额账本 3 个（`/admin/balances/adjust`、`/admin/balances/batch-adjust`、`/admin/adjust-logs`）
 - 套餐与订阅 14 个（`/admin/plans*`、`/admin/plan_prices/{id}`、`/admin/plan-activations*`、`/user/plans`、订阅与取消）
 - 内部端点 3 个（客户端密钥校验、记录摄入、充值回调）
@@ -129,7 +129,7 @@ README 第 251 行只数了这八页。剩下十一页连本机后端都没有�
 | 公告 [announcements.tsx](src/routes/dashboard/announcements.tsx) | `/api/admin/announcements*`（local） | 已接 |
 
 用户面板十个页面全部读 [panel-data.ts](src/lib/panel-data.ts)。其中概览与个人中心用 `getCurrentUser`
-取真实身份（昵称、角色、主题），余额、额度、预算、流水这些业务数字仍是示例。
+取真实身份（昵称、角色、主题），余额、授信、预算、流水这些业务数字仍是示例。
 
 因为业务页面全部没接，所以「点击操作」这条路整体不通：按钮要么没有 `onClick`，要么只改本地数组。
 这是第一层阻断。
@@ -150,7 +150,7 @@ README 第 251 行只数了这八页。剩下十一页连本机后端都没有�
 | 用户列表 | `GET /api/admin/users` | [users.tsx](src/routes/dashboard/users.tsx) | 表格读内联 `users` 常量，没发请求 |
 | 新建用户 | `POST /api/admin/users` | users.tsx 第 227 行 | 「新增用户」按钮没有 `onClick` |
 | 用户详情 | `GET /api/admin/users/{id}` | users.tsx 第 293 行 `UserDetailSheet` | 抽屉读列表里的示例字段，没请求详情接口 |
-| 改用户 | `PUT /api/admin/users/{id}` | users.tsx | 没有编辑入口，改名字、邮箱、密码、角色、授信额度、套餐都做不到 |
+| 改用户 | `PUT /api/admin/users/{id}` | users.tsx | 没有编辑入口，改名字、邮箱、密码、角色、授信、套餐都做不到 |
 | 禁用用户 | `DELETE /api/admin/users/{id}` | users.tsx 第 297 行抽屉 | 没有「禁用」按钮。接口把 `status` 置 0，属于软删 |
 | 启用用户 | `PUT /api/admin/users/{id}` `status=1` | users.tsx | 没有「启用」按钮。禁用后无法在界面上恢复 |
 | 设预算 | `PUT /api/admin/users/{id}/budget` | users.tsx | 没有预算入口，`enabled`、`amount`、`period` 都填不了 |
@@ -190,7 +190,7 @@ README 第 251 行只数了这八页。剩下十一页连本机后端都没有�
 | 我的密钥 | `GET /api/user/api_keys` | [keys.tsx](src/routes/panel/keys.tsx) | 列表读 `panel-data` 的 `apiKeys` |
 | 新建密钥 | `POST /api/user/api_keys` | keys.tsx 第 76 行 | `create()` 自己拼前缀与后缀，明文是假的，没发请求 |
 | 删密钥 | `DELETE /api/user/api_keys/{id}` | keys.tsx 第 99 行 | `remove()` 只过滤本地数组 |
-| 额度与流水 | `GET /api/user/credits` | [credits.tsx](src/routes/panel/credits.tsx) | 读 `panelCredits` 与 `balanceTransactions` |
+| 余额与授信 | `GET /api/user/credits` | [credits.tsx](src/routes/panel/credits.tsx) | 读 `panelCredits` 与 `balanceTransactions` |
 | 可订阅套餐 | `GET /api/user/plans` | [plans.tsx](src/routes/panel/plans.tsx) | 读 `planViews` 与 `currentPlan` |
 | 订阅与续费 | `POST /api/user/plans/{id}/subscribe` | plans.tsx 第 65 行 | `subscribe()` 只 `setSubscribed`，第 78 行与第 315 行还写着「没有真的下单」「本机没有接支付与订阅接口」，与接口已实现不符 |
 | 我的账号信息 | `GET /api/user/me` | [me.tsx](src/routes/panel/me.tsx) | 余额、授信、预算读 `panelMe`，没调接口 |

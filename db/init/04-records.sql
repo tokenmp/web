@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS request_records (
 -- 而调用记录里失败也要留痕。
 --
 -- cost_* 是成本侧（付给上游），revenue_* 是收入侧（向用户收），
--- owner_credit_amount 是分享给上游账号属主的额度。
+-- owner_credit_amount 是渠道分成。
 CREATE TABLE IF NOT EXISTS billing_records (
   id                      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   request_id              VARCHAR(64)     NOT NULL,

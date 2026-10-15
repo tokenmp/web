@@ -45,7 +45,7 @@ const METRIC_OPTIONS: { value: "tokens" | "revenue"; label: string }[] = [
  * 一屏回答三个问题：还剩多少、最近用得怎么样、钱的去向。
  * 所以顺序是 KPI 指条 → 用量趋势 → 当前套餐还剩多少 → 最近流水。
  *
- * 全部读本机接口：额度与流水是 /user/credits，用量是 /user/usage，套餐是 /user/plans。
+ * 全部读本机接口：余额与授信是 /user/credits，用量是 /user/usage，套餐是 /user/plans。
  * 转发内核还没回写记录之前，用量与流水都是空的，这里显示「—」而不是编个数。
  */
 export default function PanelOverview() {
@@ -78,7 +78,7 @@ export default function PanelOverview() {
       hint:
         me.data() === null
           ? undefined
-          : `余额 ${formatPoints(me.data()!.balance)} · 信用 ${formatPoints(me.data()!.credit_available)}`,
+          : `余额 ${formatPoints(me.data()!.balance)} · 剩余授信 ${formatPoints(me.data()!.credit_available)}`,
     },
     {
       label: "今日 Token",
@@ -180,7 +180,7 @@ export default function PanelOverview() {
               when={current()?.subscription}
               fallback={
                 <>
-                  <p class="text-sm text-muted-foreground">还没有周期额度</p>
+                  <p class="text-sm text-muted-foreground">还没有订阅额度</p>
                   <A
                     href="/panel/plans"
                     class={cn(buttonVariants({ variant: "outline" }), "mt-3")}
@@ -191,7 +191,7 @@ export default function PanelOverview() {
               }
             >
               <div class="flex items-center justify-between text-sm">
-                <span class="text-muted-foreground">额度已用</span>
+                <span class="text-muted-foreground">订阅额度已用</span>
                 <span>
                   <DecimalSplit text={formatPoints(current()!.subscription!.quota_used)} /> /{" "}
                   <DecimalSplit text={formatPoints(current()!.subscription!.quota_limit)} />
@@ -203,7 +203,7 @@ export default function PanelOverview() {
                 aria-valuenow={Math.round(quotaRate() * 100)}
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-label="套餐额度已用"
+                aria-label="套餐订阅额度已用"
               >
                 <div
                   class="h-full rounded-full bg-primary"

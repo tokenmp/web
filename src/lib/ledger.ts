@@ -3,16 +3,16 @@
  *
  * 账户上有三个量，语义要与 openapi 对齐：
  *
- *   已用信用 = credit_limit - credit_available
- *   可用额度 = balance + credit_available
+ *   已用授信 = credit_limit - credit_available
+ *   可用 = balance + credit_available（余额 + 剩余授信）
  *
  * `credit_available` 不存库，每次由 credit_limit 与 credit_used 算出来，
  * 免得三个数各写各的、对不上账。
  *
  * 记账规则两条，来自 openapi 对调账接口的说明：
  *
- *   入账（正数）先冲抵已用的信用额度，剩下的才进余额。
- *   扣款（负数）先扣余额，不够再占信用额度。
+ *   入账（正数）先冲抵已用授信，剩下的才进余额。
+ *   扣款（负数）先扣余额，不够再占授信。
  *
  * 调账、订阅、用量扣费都走这里，一处改口径三处一起变。
  */
@@ -41,7 +41,7 @@ export function creditAvailable(creditLimit: number, creditUsed: number) {
   return round8(creditLimit - creditUsed);
 }
 
-/** 扣款时余额与可用信用都不够。订阅那里要把它翻成 402 insufficient_balance */
+/** 扣款时余额与剩余授信都不够。订阅那里要把它翻成 402 insufficient_balance */
 export class InsufficientBalanceError extends Error {
   readonly userId: number;
   readonly required: number;
@@ -152,14 +152,14 @@ export async function applyCreditTx(tx: LedgerTx, move: LedgerMove, precheckedAm
   let creditPart: number;
 
   if (amount > 0) {
-    // 入账：先把欠的信用还上，剩下的进余额
+    // 入账：先把欠的授信还上，剩下的进余额
     const repay = Math.min(amount, creditUsed);
     creditUsed = round8(creditUsed - repay);
     balancePart = round8(amount - repay);
     balance = round8(balance + balancePart);
     creditPart = round8(repay);
   } else {
-    // 扣款：先扣余额，不够再占信用
+    // 扣款：先扣余额，不够再占授信
     const need = round8(-amount);
     const available = round8(balance + creditAvailable(creditLimit, creditUsed));
     if (!move.allowOverdraft && need > available) {

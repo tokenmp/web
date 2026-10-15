@@ -152,7 +152,7 @@ export function applyAdjustment(input: AdjustmentInput) {
   });
 }
 
-/** 改授信额度。接口回 {ok:true}，没有 data 信封 */
+/** 改授信。接口回 {ok:true}，没有 data 信封 */
 export function updateCreditLimit(userId: number, creditLimit: number) {
   return putOk(`/api/admin/users/${userId}`, { credit_limit: creditLimit });
 }

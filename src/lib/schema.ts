@@ -39,7 +39,7 @@ export const users = mysqlTable("users", {
   creditLimit: decimal("credit_limit", { precision: 14, scale: 8 }).notNull().default("0"),
   /** 可用余额（元）。调账、订阅、用量扣费都改这一列 */
   balance: decimal("balance", { precision: 14, scale: 8 }).notNull().default("0"),
-  /** 已用掉的信用额度。剩余信用 = creditLimit - creditUsed */
+  /** 已用授信。剩余授信 = creditLimit - creditUsed */
   creditUsed: decimal("credit_used", { precision: 14, scale: 8 }).notNull().default("0"),
   planId: bigint("plan_id", { mode: "number", unsigned: true }),
   /** 改密码时自增，让已经签发的会话失效 */
@@ -185,7 +185,7 @@ export const creditTransactions = mysqlTable(
     totalTokens: bigint("total_tokens", { mode: "number" }),
     /** 这次变动落在余额上的部分，符号与 delta 同向 */
     balancePart: decimal("balance_part", { precision: 14, scale: 8 }).notNull().default("0"),
-    /** 落在信用额度上的部分 */
+    /** 落在授信上的部分 */
     creditPart: decimal("credit_part", { precision: 14, scale: 8 }).notNull().default("0"),
     /** 扣的是订阅额度还是余额，用量类流水才有 */
     ledger: varchar("ledger", { length: 16 }),

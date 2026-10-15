@@ -184,7 +184,7 @@ try {
   if (!admin[0]) throw new Error("库里没有可用的管理员，先跑一次 db/init");
   adminToken = await signSession({ sub: Number(admin[0].id), tv: Number(admin[0].token_version), role: "admin" });
 
-  const planP = await insertPlan("P", "money", 100, 100); // 旧档：100 元 / 100 额度 / 30 天
+  const planP = await insertPlan("P", "money", 100, 100); // 旧档：100 元 / 100 订阅额度 / 30 天
   const planQ = await insertPlan("Q", "money", 200, 200); // 高档：200 元
   const planS = await insertPlan("S", "requests", 1000, 50); // 按次包：1000 次 / 50 元
   planIds.push(planP, planQ, planS);
@@ -216,7 +216,7 @@ try {
     periodEnd: new Date(now.getTime() + 15 * DAY),
   };
   check("requests 退款按 0", refundableAmount(requestsWindow, now) === 0);
-  check("requests 折算额度仍是次数（不退钱但作废要显示）", near(proratedRemainingQuota(requestsWindow, now), 500));
+  check("requests 折算后仍是次数（不退钱但作废要显示）", near(proratedRemainingQuota(requestsWindow, now), 500));
   check(
     "period_end 缺失回 0",
     refundableAmount({ quotaKind: "money", quotaLimit: 100, periodStart: now, periodEnd: null }, now) === 0,
@@ -356,7 +356,7 @@ try {
   const afterCancelUser = await getUser(userA);
   const [cancelSubRow]: any = await conn.query("SELECT status FROM subscriptions WHERE id = ?", [subCancel]);
   check(
-    "取消成功并回剩余额度",
+    "取消成功并回剩余订阅额度",
     cancelled.status === 200 && cancelled.body.data.plan_id === planP && near(cancelled.body.data.forfeited_quota, 50, 0.01),
     cancelled.body,
   );
@@ -388,7 +388,7 @@ try {
     "SELECT delta, source, ref_id, operator, reason FROM credit_transactions WHERE user_id = ? ORDER BY id DESC LIMIT 1",
     [userA],
   );
-  check("refund=true 退款 ≈ 剩余额度折算价", refunded.status === 200 && near(refunded.body.data.refunded, 50, 0.01), refunded.body);
+  check("refund=true 退款 ≈ 剩余订阅额度折算价", refunded.status === 200 && near(refunded.body.data.refunded, 50, 0.01), refunded.body);
   check("余额增加到 100", near(Number(afterRefund.balance), 100, 0.01), afterRefund);
   check(
     "流水 source=refund 且指回订阅",
@@ -452,7 +452,7 @@ try {
   );
   const expectedCharged = 200 - expectedCredit;
   check(
-    "换档扣款 = 新价 - 剩余额度折算价",
+    "换档扣款 = 新价 - 剩余订阅额度折算价",
     swapped.status === 200 && near(swapped.body.charged, expectedCharged, 0.01) && swapped.body.from_plan_id === planP,
     { body: swapped.body, expectedCharged },
   );

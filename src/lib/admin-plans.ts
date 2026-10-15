@@ -35,8 +35,8 @@ export const PRICING_MODE_OPTIONS: { value: PricingMode; label: string }[] = [
 ];
 
 export const QUOTA_KIND_OPTIONS: { value: QuotaKind; label: string }[] = [
-  { value: "money", label: "金额额度" },
-  { value: "requests", label: "次数额度" },
+  { value: "money", label: "按金额" },
+  { value: "requests", label: "按次数" },
 ];
 
 export const OVERAGE_MODE_OPTIONS: { value: OverageMode; label: string }[] = [
@@ -336,7 +336,7 @@ export function buildPlanInput(values: PlanFormValues): BuildResult<PlanInput> {
   const pricingMode = values.pricingMode;
 
   if (!oneOf(values.quotaKind, ["money", "requests"] as const)) {
-    return { ok: false, message: "额度单位只能是金额或次数" };
+    return { ok: false, message: "订阅额度单位只能是金额或次数" };
   }
   const quotaKind = values.quotaKind;
 
@@ -361,26 +361,26 @@ export function buildPlanInput(values: PlanFormValues): BuildResult<PlanInput> {
 
   const quotaAmount = parseDecimal(values.quotaAmount) ?? (values.quotaAmount.trim() ? null : 0);
   if (quotaAmount === null || quotaAmount < 0) {
-    return { ok: false, message: "额度数量必须是非负数字" };
+    return { ok: false, message: "订阅额度数量必须是非负数字" };
   }
-  const amountProblem = decimalProblem(quotaAmount, "额度数量", PRICE);
+  const amountProblem = decimalProblem(quotaAmount, "订阅额度数量", PRICE);
   if (amountProblem) return { ok: false, message: amountProblem };
 
   const periodDays = parseIntStrict(values.quotaPeriodDays) ?? (values.quotaPeriodDays.trim() ? null : 0);
   if (periodDays === null || periodDays < 0) {
-    return { ok: false, message: "额度周期必须是大于等于 0 的整数天" };
+    return { ok: false, message: "订阅额度周期必须是大于等于 0 的整数天" };
   }
-  if (!fitsInt32(periodDays)) return { ok: false, message: "额度周期超出 32 位整数范围" };
+  if (!fitsInt32(periodDays)) return { ok: false, message: "订阅额度周期超出 32 位整数范围" };
 
   const sortOrder = parseIntStrict(values.sortOrder) ?? (values.sortOrder.trim() ? null : 0);
   if (sortOrder === null) return { ok: false, message: "排列顺序必须是整数" };
   if (!fitsInt32(sortOrder)) return { ok: false, message: "排列顺序超出 32 位整数范围" };
 
   if (mode === "subscription" && quotaAmount <= 0) {
-    return { ok: false, message: "订阅套餐的额度数量必须大于 0" };
+    return { ok: false, message: "订阅套餐的订阅额度数量必须大于 0" };
   }
   if (mode === "subscription" && periodDays <= 0) {
-    return { ok: false, message: "订阅套餐的额度周期必须大于 0 天" };
+    return { ok: false, message: "订阅套餐的订阅额度周期必须大于 0 天" };
   }
 
   const currency = values.currency.trim().toUpperCase();
@@ -484,12 +484,12 @@ export function formatPlanMoney(value: number, currency: string) {
 }
 
 /**
- * 卡片上那句额度描述，由额度口径拼出来，不再是写死的营销文案。
+ * 卡片上那句订阅额度描述，由订阅额度口径拼出来，不再是写死的营销文案。
  * 按量付费没有周期，直接说按量扣减。
  */
 export function planQuotaText(plan: Plan) {
   if (plan.mode !== "subscription") return "没有月费，用多少算多少，余额实时扣减。";
-  const unit = plan.quota_kind === "requests" ? "次调用" : "元额度";
+  const unit = plan.quota_kind === "requests" ? "次调用" : "元订阅额度";
   const amount =
     plan.quota_kind === "requests"
       ? plan.quota_amount.toLocaleString("zh-CN")

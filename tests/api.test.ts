@@ -46,7 +46,7 @@ import { POST as apiKeyLookupPost } from "../src/routes/api/internal/api-key";
 import { POST as recordsIngestPost } from "../src/routes/api/internal/records";
 import { POST as rechargeCallbackPost } from "../src/routes/api/internal/recharge-callback";
 
-// 两把内部密钥写死在这里，不依赖 .env，测试才能反复跑
+// 两把共享密钥写死在这里，不依赖 .env，测试才能反复跑
 process.env.RECORDS_CALLBACK_SECRET = "t-e2e-records-secret";
 process.env.RECHARGE_CALLBACK_SECRET = "t-e2e-recharge-secret";
 
@@ -101,7 +101,7 @@ let userId = 0;
 let userToken = "";
 let planId = 0;
 
-/** 把测试用户恢复到干净起点：余额、授信、预算、密钥、流水、订阅全清 */
+/** 把测试用户恢复到干净起点：余额、授信、预算、客户端密钥、流水、订阅全清 */
 async function resetUser() {
   await conn.query("DELETE FROM credit_transactions WHERE user_id = ?", [userId]);
   await conn.query("DELETE FROM subscriptions WHERE user_id = ?", [userId]);
@@ -306,7 +306,7 @@ describe("用户管理", () => {
 });
 
 describe("充值、调账与账本", () => {
-  test("入账先冲抵信用，扣款先扣余额再用信用", async () => {
+  test("入账先冲抵授信，扣款先扣余额再用授信", async () => {
     await resetUser();
     const adjust = (body: unknown) => call(adjustPost, { method: "POST", path: "/api/admin/balances/adjust", token: adminToken, body });
 
@@ -318,19 +318,19 @@ describe("充值、调账与账本", () => {
     await adjust({ user_id: userId, amount: -30, reason: "手工扣减" });
     expect((await call(meGet, { path: "/api/user/me", token: userToken })).body.data.balance).toBe(70);
 
-    // 余额只剩 70，扣 100 时余额归零、剩下 30 占信用
-    const deep = await adjust({ user_id: userId, amount: -100, reason: "扣到占信用" });
+    // 余额只剩 70，扣 100 时余额归零、剩下 30 占授信
+    const deep = await adjust({ user_id: userId, amount: -100, reason: "扣到占授信" });
     expect(deep.body.data.balance_after).toBe(0);
     const me1 = await call(meGet, { path: "/api/user/me", token: userToken });
     expect([me1.body.data.balance, me1.body.data.credit_limit, me1.body.data.credit_available]).toEqual([0, 50, 20]);
 
-    // 再充 50：先还掉 30 信用，剩下 20 才进余额
+    // 再充 50：先还掉 30 授信，剩下 20 才进余额
     const back = await adjust({ user_id: userId, amount: 50, reason: "再充一笔", source: "recharge" });
     expect(back.body.data.balance_after).toBe(20);
     const me2 = await call(meGet, { path: "/api/user/me", token: userToken });
     expect([me2.body.data.balance, me2.body.data.credit_available]).toEqual([20, 50]);
 
-    // 管理员调账允许透支：扣 1000 会让信用欠款超过授信上限
+    // 管理员调账允许透支：扣 1000 会让授信欠款超过授信上限
     const over = await adjust({ user_id: userId, amount: -1000, reason: "透支" });
     expect(over.body.data.balance_after).toBe(0);
     const me3 = await call(meGet, { path: "/api/user/me", token: userToken });
@@ -377,8 +377,8 @@ describe("套餐与订阅", () => {
 
   test("新建套餐的参数校验与重名冲突", async () => {
     const post = (body: unknown) => call(plansPost, { method: "POST", path: "/api/admin/plans", token: adminToken, body });
-    // 订阅制必须给额度与周期
-    expect((await post({ name: `t-e2e-缺额度-${stamp}`, mode: "subscription", pricing_mode: "table" })).status).toBe(400);
+    // 订阅制必须给订阅额度与周期
+    expect((await post({ name: `t-e2e-缺订阅额度-${stamp}`, mode: "subscription", pricing_mode: "table" })).status).toBe(400);
     expect((await post({ name: `t-e2e-坏模式-${stamp}`, mode: "按月", pricing_mode: "table" })).status).toBe(400);
     expect((await post({ name: `t-e2e-坏定价-${stamp}`, mode: "subscription", pricing_mode: "按表", quota_amount: 1, quota_period_days: 1 })).status).toBe(400);
     expect((await post({ name: planName, mode: "pay_as_you_go", pricing_mode: "table" })).status).toBe(409);
@@ -424,7 +424,7 @@ describe("套餐与订阅", () => {
     await resetUser();
     const subscribe = () => call(subscribePost, { method: "POST", path: `/api/user/plans/${planId}/subscribe`, token: userToken, params: { id: String(planId) } });
 
-    // 余额 0、授信 50，但把授信也收掉，可用额度就是 0
+    // 余额 0、授信 50，但把授信也收掉，可用（余额 + 授信）就是 0
     await call(adminUserPut, { method: "PUT", path: `/api/admin/users/${userId}`, token: adminToken, params: { id: String(userId) }, body: { credit_limit: 0 } });
     const blocked = await subscribe();
     expect(blocked.status).toBe(402);
@@ -485,7 +485,7 @@ describe("套餐与订阅", () => {
   });
 });
 
-describe("内部密钥校验端点", () => {
+describe("客户端密钥校验端点", () => {
   /** 建一个用完就删的测试套餐 */
   async function createPlan(name: string, body: Record<string, unknown>) {
     const res = await call(plansPost, { method: "POST", path: "/api/admin/plans", token: adminToken, body: { name, ...body } });
@@ -493,10 +493,10 @@ describe("内部密钥校验端点", () => {
     return res.body.data.id as number;
   }
 
-  /** 签一把密钥，返回明文与 id */
+  /** 签一把客户端密钥，返回明文与 id */
   async function issueKey(name: string) {
     const res = await call(myKeysPost, { method: "POST", path: "/api/user/api_keys", token: userToken, body: { name } });
-    if (res.status !== 200) throw new Error(`签密钥失败：${JSON.stringify(res.body)}`);
+    if (res.status !== 200) throw new Error(`签客户端密钥失败：${JSON.stringify(res.body)}`);
     return { plain: res.body.data.key as string, id: res.body.data.id as number };
   }
 
@@ -608,7 +608,7 @@ describe("内部密钥校验端点", () => {
     await resetUser();
   });
 
-  test("两把内部密钥不通用", async () => {
+  test("两把共享密钥不通用", async () => {
     // 摄入端点只认 RECORDS 那把
     const ingest = (headers: Record<string, string>) =>
       call(recordsIngestPost, { method: "POST", path: "/api/internal/records", headers, body: { records: [] } });
@@ -624,11 +624,11 @@ describe("内部密钥校验端点", () => {
         body: { order_no: "rc-does-not-exist", status: "paid" },
       });
     expect((await callback(recordsSecretHeaders)).status).toBe(403);
-    // 用对了密钥就过了鉴权，走到「单号不存在」
+    // 用对了共享密钥就过了鉴权，走到「单号不存在」
     expect((await callback(rechargeSecretHeaders)).status).toBe(404);
   });
 
-  test("密钥查询只走 sha256，路径上没有 bcrypt", () => {
+  test("客户端密钥查询只走 sha256，路径上没有 bcrypt", () => {
     // bcrypt 是登录口令那条路用的；转发链路每次请求都会走这里，必须靠 key_hash 上的
     // 唯一索引一次命中，不能对候选行逐条 compare。注释里可以提 bcrypt，代码里不行。
     const source = fs.readFileSync("src/lib/api-key-lookup.ts", "utf-8");
@@ -743,10 +743,10 @@ describe("摄入时一并记账", () => {
     expect(await usageTx(dup)).toHaveLength(1);
   });
 
-  test("有订阅时先吃额度，额度满了才整笔走余额", async () => {
+  test("有订阅时先吃订阅额度，订阅额度满了才整笔走余额", async () => {
     await resetUser();
     await adjust(100, "摄入前充值");
-    // 订阅扣 10 元，余额 90，额度 10，quota_used 从 0 起
+    // 订阅扣 10 元，余额 90，订阅额度 10，quota_used 从 0 起
     expect((await subscribe()).status).toBe(200);
     expect(await quotaUsed()).toBe(0);
 
@@ -756,11 +756,11 @@ describe("摄入时一并记账", () => {
     const res = await ingest({ billing: [billingRow(a, 4), billingRow(b, 6), billingRow(c, 1)] });
     expect(res.body.inserted).toBe(3);
 
-    // 前两笔吃额度，加起来正好 10；第三笔额度不够，整笔走余额
+    // 前两笔吃订阅额度，加起来正好 10；第三笔订阅额度不够，整笔走余额
     expect([await billingLedger(a), await billingLedger(b), await billingLedger(c)]).toEqual(["quota", "quota", "balance"]);
     expect(await quotaUsed()).toBe(10);
 
-    // 额度的两笔不动余额，也不写 credit_transactions
+    // 走订阅额度的两笔不动余额，也不写 credit_transactions
     expect(await usageTx(a)).toHaveLength(0);
     expect(await usageTx(b)).toHaveLength(0);
 
@@ -769,9 +769,9 @@ describe("摄入时一并记账", () => {
     expect((await balanceOf()).balance).toBe(89);
   });
 
-  test("余额与信用都不够时按透支处理，delta 与 revenue_amount 一一对应", async () => {
+  test("余额与授信都不够时按透支处理，delta 与 revenue_amount 一一对应", async () => {
     await resetUser();
-    // 余额 0，授信也收掉，可用额度就是 0
+    // 余额 0，授信也收掉，可用（余额 + 授信）就是 0
     await call(adminUserPut, {
       method: "PUT",
       path: `/api/admin/users/${userId}`,
@@ -788,7 +788,7 @@ describe("摄入时一并记账", () => {
     const tx = await usageTx(rid);
     expect([tx.length, Number(tx[0].delta), Number(tx[0].balance_after), tx[0].ledger]).toEqual([1, -5, 0, "balance"]);
     const u = await balanceOf();
-    // 余额扣到 0 为止，剩下 5 元占信用，可用额度成负数
+    // 余额扣到 0 为止，剩下 5 元占授信，可用（余额 + 授信）成负数
     expect([u.balance, u.creditUsed]).toEqual([0, 5]);
     expect(u.creditLimit - u.creditUsed).toBe(-5);
     expect(await billingLedger(rid)).toBe("balance");

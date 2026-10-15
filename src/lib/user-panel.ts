@@ -50,9 +50,9 @@ export type PanelMe = {
   /** 1 = 正常，0 = 停用 */
   status: number;
   role: string;
-  /** 授信额度（元） */
+  /** 授信（元） */
   credit_limit: number;
-  /** 剩余信用 = credit_limit - credit_used */
+  /** 剩余授信 = credit_limit - credit_used */
   credit_available: number;
   plan_id: number | null;
   /** 余额（元） */
@@ -128,7 +128,7 @@ export function deleteApiKey(id: number) {
   return deleteOk(`/api/user/api_keys/${id}`);
 }
 
-/* ------------------------------------------------------------ 额度流水 */
+/* ---------------------------------------------------------- 余额流水 */
 
 export type PanelTransaction = {
   id: number;
@@ -145,7 +145,7 @@ export type PanelTransaction = {
   total_tokens: number | null;
   /** 落在余额上的部分，符号与 delta 同向 */
   balance_part: number;
-  /** 落在信用额度上的部分 */
+  /** 落在授信上的部分 */
   credit_part: number;
 };
 
@@ -220,12 +220,12 @@ export function subscribePlan(id: number) {
  * 面板上要显示的套餐。
  *
  * 后台用户详情里的「套餐」下拉写的是 users.plan_id（绑定），用户自助订阅才写一条
- * subscriptions 行（周期与额度），二者是可以分开的：只绑定、没订阅时 /user/plans
+ * subscriptions 行（周期与订阅额度），二者是可以分开的：只绑定、没订阅时 /user/plans
  * 的 current 是空的，面板上就什么都不显示 —— 后台刚给用户绑上套餐，切到用户面板
  * 却看不到，说的就是这一种。
  *
  * 这里把两种情形合起来：有生效订阅以订阅为准，只有绑定就退回绑定的那一档，
- * subscription 为 null 表示「绑了套餐，还没有周期额度」。判据本体在
+ * subscription 为 null 表示「绑了套餐，还没有订阅额度」。判据本体在
  * src/lib/current-plan.ts，服务端算计价口径时用的是同一份。
  */
 export type PanelPlanState = {

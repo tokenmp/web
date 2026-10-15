@@ -16,7 +16,7 @@ type AdjustSource = (typeof SOURCES)[number];
 /**
  * POST /api/admin/balances/adjust
  *
- * 管理员手工调账：正数入账、负数扣款，正数会先冲抵已用的信用额度（applyCredit 的口径）。
+ * 管理员手工调账：正数入账、负数扣款，正数会先冲抵已用授信（applyCredit 的口径）。
  * 允许透支 —— 管理员想扣多少就该扣多少，余额扣成负数由 credit_used 承接，
  * 不能让「余额不够」拦住管理动作。
  */

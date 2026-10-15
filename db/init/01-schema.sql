@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
   -- 可用余额。线上的 sales.users 没有这一列，余额另存在别的库里；
   -- 本地把账本收在这张表上，调账与订阅都在事务里直接改它。
   balance        DECIMAL(14,8)   NOT NULL DEFAULT 0,
-  -- 已用掉的信用额度。剩余信用 = credit_limit - credit_used，不单独存。
+  -- 已用授信。剩余授信 = credit_limit - credit_used，不单独存。
   credit_used    DECIMAL(14,8)   NOT NULL DEFAULT 0,
   plan_id        BIGINT UNSIGNED DEFAULT NULL,
   -- 改密码时自增，用来让已经签发的 token 失效

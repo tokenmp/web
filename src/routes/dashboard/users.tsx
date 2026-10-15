@@ -77,7 +77,7 @@ type StatusFilter = (typeof STATUS_TABS)[number]["value"];
 const SORT_OPTIONS = [
   { value: "created_at", label: "注册时间" },
   { value: "updated_at", label: "更新时间" },
-  { value: "credit_limit", label: "授信额度" },
+  { value: "credit_limit", label: "授信" },
   { value: "name", label: "用户名" },
 ];
 
@@ -330,7 +330,7 @@ export default function DashboardUsers() {
               <TableHead>用户</TableHead>
               <TableHead>套餐</TableHead>
               <TableHead class="text-right">余额</TableHead>
-              <TableHead class="text-right">授信额度</TableHead>
+              <TableHead class="text-right">授信</TableHead>
               <TableHead>预算</TableHead>
               <TableHead>注册时间</TableHead>
               <TableHead>状态</TableHead>
@@ -581,7 +581,7 @@ function UserDetail(props: { user: UserView; plans: PlanOption[]; onChanged: () 
       <MetricGrid
         items={[
           { label: "可用余额", value: formatCurrency(user().balance) },
-          { label: "授信额度", value: formatCurrency(user().credit_limit) },
+          { label: "授信", value: formatCurrency(user().credit_limit) },
           { label: "预算上限", value: budgetAmountLabel(user().budget) },
           { label: "本周期已用", value: formatCurrency(user().budget?.used ?? 0) },
         ]}
@@ -663,11 +663,11 @@ function UserDetail(props: { user: UserView; plans: PlanOption[]; onChanged: () 
             <dl class="space-y-3">
               <DetailRow label="套餐" value={planName(props.plans, sub().plan_id)} />
               <DetailRow
-                label="额度类型"
+                label="订阅额度类型"
                 value={sub().quota_kind === "requests" ? "按次数" : "按金额"}
               />
               <DetailRow
-                label="已用 / 额度"
+                label="已用 / 订阅额度"
                 value={`${formatCurrency(sub().quota_used)} / ${formatCurrency(sub().quota_limit)}`}
               />
               <DetailRow
@@ -881,7 +881,7 @@ function UserFormDialog(props: {
 
     const amount = Number(creditLimit());
     if (!Number.isFinite(amount) || amount < 0) {
-      setNotice("授信额度必须是不小于 0 的数字");
+      setNotice("授信必须是不小于 0 的数字");
       return;
     }
 
@@ -985,7 +985,7 @@ function UserFormDialog(props: {
 
         <div class="grid grid-cols-2 gap-3">
           <div class="space-y-1.5">
-            <Label for="user-credit">授信额度</Label>
+            <Label for="user-credit">授信</Label>
             <Input
               id="user-credit"
               type="number"

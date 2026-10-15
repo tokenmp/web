@@ -195,14 +195,14 @@ try {
     afterTxA === beforeTxA && afterTxB === beforeTxB,
   );
 
-  /* ------------------------------------------------- 入账先还信用 */
+  /* ------------------------------------------------- 入账先还授信 */
   console.log("\n[入账先冲抵已用授信]");
   const owed = await insertUser("owed");
   await clearTx(owed);
   await setAccount(owed, 0, 100, 30);
   const owedRes = await call({
     path: "/api/admin/balances/batch-adjust",
-    body: { items: [{ user_id: owed, amount: 50, reason: "还信用", source: "recharge" }] },
+    body: { items: [{ user_id: owed, amount: 50, reason: "还授信", source: "recharge" }] },
     token: adminToken,
   });
   check("状态码 200", owedRes.status === 200, owedRes.body);

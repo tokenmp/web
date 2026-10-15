@@ -47,7 +47,7 @@ type AccountAction = "recharge" | "adjust" | "credit" | "budget";
 const ACTION_TITLES: Record<AccountAction, string> = {
   recharge: "给该用户代充",
   adjust: "手工调账",
-  credit: "修改授信额度",
+  credit: "修改授信",
   budget: "设置预算封顶",
 };
 
@@ -155,7 +155,7 @@ export default function DashboardBalances() {
         hint: `当前页 ${items.length} 个账户合计`,
       },
       {
-        label: "本页授信额度",
+        label: "本页授信",
         value: formatCurrency(items.reduce((sum, account) => sum + account.credit_limit, 0)),
         hint: "余额扣成负数时由授信承接",
       },
@@ -229,7 +229,7 @@ export default function DashboardBalances() {
               <TableRow>
                 <TableHead>用户</TableHead>
                 <TableHead class="text-right">可用余额</TableHead>
-                <TableHead class="text-right">授信额度</TableHead>
+                <TableHead class="text-right">授信</TableHead>
                 <TableHead>预算</TableHead>
                 <TableHead>套餐</TableHead>
                 <TableHead class="text-right">操作</TableHead>
@@ -302,7 +302,7 @@ export default function DashboardBalances() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            aria-label={`修改 ${account.name} 的授信额度`}
+                            aria-label={`修改 ${account.name} 的授信`}
                             onClick={() => openAction(account, "credit")}
                           >
                             授信
@@ -468,11 +468,11 @@ function BalanceActionDialog(props: {
       } else if (next === "credit") {
         const value = Number(creditLimit());
         if (!Number.isFinite(value) || value < 0) {
-          setError("授信额度要是不小于 0 的数字");
+          setError("授信要是不小于 0 的数字");
           return;
         }
         await updateCreditLimit(account.id, value);
-        setResult(`已把 ${account.name} 的授信额度改为 ${formatCurrency(value)}`);
+        setResult(`已把 ${account.name} 的授信改为 ${formatCurrency(value)}`);
       } else {
         const value = budgetEnabled() ? Number(budgetAmount()) : 0;
         if (!Number.isFinite(value) || value < 0) {
@@ -563,7 +563,7 @@ function BalanceActionDialog(props: {
 
         <Show when={props.action === "credit"}>
           <div class="space-y-1.5">
-            <Label for="balance-credit">新的授信额度（美元）</Label>
+            <Label for="balance-credit">新的授信（美元）</Label>
             <Input
               id="balance-credit"
               type="number"

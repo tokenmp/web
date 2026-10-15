@@ -21,7 +21,7 @@ const PAGE_SIZE = 10;
 /**
  * 记账去向。
  *
- * 一次扣款可能同时扣余额和信用额度，一次入账也可能先把信用额度还上、剩下的才转进余额，
+ * 一次扣款可能同时扣余额和授信，一次入账也可能先把授信还上、剩下的才转进余额，
  * 所以这里拼的是「哪几部分参与了」，不是单一的「余额支付」。
  */
 function ledgerParts(tx: PanelTransaction) {
@@ -32,18 +32,18 @@ function ledgerParts(tx: PanelTransaction) {
   const hasCredit = credit > 1e-12;
 
   if (tx.delta < 0) {
-    if (hasBalance && hasCredit) return "余额 + 信用支付";
-    return hasCredit ? "信用额度支付" : "余额支付";
+    if (hasBalance && hasCredit) return "余额 + 授信支付";
+    return hasCredit ? "授信支付" : "余额支付";
   }
-  if (hasBalance && hasCredit) return "返还信用 + 转入余额";
-  return hasCredit ? "返还信用额度" : "转入余额";
+  if (hasBalance && hasCredit) return "返还授信 + 转入余额";
+  return hasCredit ? "返还授信" : "转入余额";
 }
 
 /**
  * 余额明细。
  *
- * 积分口径跟线上一致：1 元 = 10000 积分，余额、信用都是元，展示时换算。
- * 页头三格是「我到底还能用多少」—— 可用额度 = 余额 + 剩余信用，光看余额会低估。
+ * 积分口径跟线上一致：1 元 = 10000 积分，余额、授信都是元，展示时换算。
+ * 页头三格是「我到底还能用多少」—— 可用 = 余额 + 剩余授信，光看余额会低估。
  *
  * 流水分页走服务端：切换页码与每页条数重新请求（total 在本端点的 data 里，不是顶层）。
  */
@@ -60,15 +60,15 @@ export default function PanelCredits() {
     const credits = data();
     return [
       {
-        label: "可用额度（积分）",
+        label: "可用（积分）",
         value: credits.balance + credits.credit_available,
-        hint: "余额 + 剩余信用",
+        hint: "余额 + 剩余授信",
       },
       { label: "余额（积分）", value: credits.balance, hint: `¥${credits.balance}` },
       {
-        label: "信用额度（积分）",
+        label: "剩余授信（积分）",
         value: credits.credit_available,
-        hint: `总额度 ¥${credits.credit_limit}`,
+        hint: `授信上限 ¥${credits.credit_limit}`,
       },
     ];
   };
