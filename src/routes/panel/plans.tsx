@@ -101,7 +101,7 @@ export default function PanelPlans() {
       // 402 是「余额不足」，不是通用失败：换成充值提示，别只丢一句请求失败
       setNotice(
         isInsufficientBalance(err)
-          ? "余额不足，无法订阅该套餐。请先充值，或改选按量付费。"
+          ? "余额不足，无法订阅该套餐。请联系管理员充值，或改选按量付费。"
           : err instanceof Error
             ? err.message
             : "订阅失败",
