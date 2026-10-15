@@ -4,7 +4,7 @@ import Pencil from "lucide-solid/icons/pencil";
 import Plus from "lucide-solid/icons/plus";
 import Rocket from "lucide-solid/icons/rocket";
 import Trash from "lucide-solid/icons/trash";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, on, Show } from "solid-js";
 
 import { PageHeader, StatRow } from "~/components/layout/page-header";
 import { Badge } from "~/components/ui/badge";
@@ -13,6 +13,7 @@ import { Card } from "~/components/ui/card";
 import { Dialog } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { PagerIfNeeded } from "~/components/ui/pager";
 import { Segmented } from "~/components/ui/segmented";
 import {
   Table,
@@ -38,6 +39,12 @@ import {
   type Severity,
 } from "~/lib/system";
 import { formatDateTime, formatNumber, toDateTimeLocal } from "~/lib/utils";
+
+/**
+ * 每页条数。跟充值单、通知那些页一样，20 条一页 —— 公告的每行有两行文字，
+ * 一屏放得下的比纯数字表少。
+ */
+const PAGE_SIZE = 20;
 
 const STATUS_TABS = [
   { value: "all", label: "全部" },
@@ -70,40 +77,80 @@ function statusVariant(status: string): "outline" | "success" | "secondary" {
  * 公告管理。
  *
  * 列表把草稿和归档的也算上 —— 管理端要能看见全部，用户端的接口只给生效中的。
- * 筛选在本地做：接口一次就把整份列表拿回来了，切标签再请求一次没有意义。
+ *
+ * 筛选与分页都走服务端：接口一直是分页的（默认一页 20 条），早先这里把第一页当成
+ * 全部，本地再 filter 一次，第 21 条起既看不到也翻不到，页头的统计也跟着错。
+ * 状态筛选改走服务端之后，`total` 与列表页才同口径。
+ *
+ * 页头四张卡读的是同一次响应里的 `status_counts`：全站口径，不随上面的筛选变。
+ * 这一点与充值单那页刻意不同 —— 那页卡片标着「本页」，从 items 里数；公告量级小，
+ * 全站数字比「本页」有用得多。别照 recharge.tsx 的写法把它改成本页口径。
  *
  * 新建出来是草稿，发布是另一个动作（后端的约定），所以表单的提交按钮写的是
  * 「存为草稿」，免得管理员以为点一下就会推给全站。
  */
 export default function DashboardAnnouncements() {
-  const { data, loading, error, reload } = createClientResource<Announcement[]>(
-    fetchAdminAnnouncements,
-    [],
-  );
   const [filter, setFilter] = createSignal<StatusFilter>("all");
+  const [page, setPage] = createSignal(1);
+  const [size, setSize] = createSignal(PAGE_SIZE);
   const [formOpen, setFormOpen] = createSignal(false);
   const [editing, setEditing] = createSignal<Announcement | null>(null);
   const [pendingDelete, setPendingDelete] = createSignal<Announcement | null>(null);
   const [busyId, setBusyId] = createSignal<number | null>(null);
   const [notice, setNotice] = createSignal("");
 
-  const filtered = createMemo(() =>
-    filter() === "all" ? data() : data().filter(item => item.status === filter()),
+  const list = createClientResource(
+    () =>
+      fetchAdminAnnouncements({
+        page: page(),
+        size: size(),
+        status: filter() === "all" ? undefined : filter(),
+      }),
+    {
+      items: [] as Announcement[],
+      total: 0,
+      status_counts: { total: 0, draft: 0, published: 0, archived: 0 },
+    },
   );
 
+  // 切页或改每页条数后重新拉一次；首帧那次交给 createClientResource 自己的 onMount
+  createEffect(
+    on(
+      () => [page(), size()],
+      () => void list.reload(),
+      { defer: true },
+    ),
+  );
+
+  /** 切筛选：回到第一页再拉。停在原来的页码上会落进一张不存在的页 */
+  const switchTab = (next: StatusFilter) => {
+    setFilter(next);
+    // 页码本来就在第 1 页时 setPage(1) 不触发上面那个 effect，这里补一次；
+    // 不在第 1 页就只改页码，让 effect 去拉，免得同一份数据拉两次
+    if (page() === 1) void list.reload();
+    else setPage(1);
+  };
+
+  /** 增删改之后重拉。列表与四张卡的计数在同一次响应里，一次 reload 两样都新 */
+  const refresh = async () => {
+    await list.reload();
+    // 删掉本页最后一条之后页码会越界，退回上一页，否则会停在一张空页上
+    if (list.data().items.length === 0 && page() > 1) setPage(page() - 1);
+  };
+
   const stats = () => {
-    const list = data();
+    const data = list.data().status_counts;
     return [
-      { label: "公告总数", value: formatNumber(list.length) },
+      { label: "公告总数", value: formatNumber(data.total) },
       {
         label: "已发布",
-        value: formatNumber(list.filter(item => item.status === "published").length),
+        value: formatNumber(data.published),
         hint: "用户端可见",
       },
-      { label: "草稿", value: formatNumber(list.filter(item => item.status === "draft").length) },
+      { label: "草稿", value: formatNumber(data.draft) },
       {
         label: "已归档",
-        value: formatNumber(list.filter(item => item.status === "archived").length),
+        value: formatNumber(data.archived),
         hint: "可重新发布",
       },
     ];
@@ -120,7 +167,7 @@ export default function DashboardAnnouncements() {
     setNotice("");
     try {
       await action(item.id);
-      await reload();
+      void refresh();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "操作失败");
     } finally {
@@ -137,7 +184,7 @@ export default function DashboardAnnouncements() {
     try {
       await deleteAnnouncement(item.id);
       setPendingDelete(null);
-      await reload();
+      void refresh();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "删除失败");
     } finally {
@@ -163,12 +210,12 @@ export default function DashboardAnnouncements() {
           <Segmented
             options={STATUS_TABS}
             value={filter()}
-            onChange={setFilter}
+            onChange={switchTab}
             ariaLabel="按状态筛选公告"
           />
           <ToolbarSpacer />
           <p class="text-sm text-muted-foreground" aria-live="polite">
-            共 {formatNumber(filtered().length)} 条
+            共 {list.loading() ? "…" : formatNumber(list.data().total)} 条
           </p>
         </Toolbar>
 
@@ -178,10 +225,10 @@ export default function DashboardAnnouncements() {
           </p>
         </Show>
 
-        <Show when={error()}>
+        <Show when={list.error()}>
           <div class="border-b px-4 py-6 text-center text-sm">
-            <p class="text-muted-foreground">{error()}</p>
-            <Button variant="outline" size="sm" class="mt-3" onClick={() => void reload()}>
+            <p class="text-muted-foreground">{list.error()}</p>
+            <Button variant="outline" size="sm" class="mt-3" onClick={() => void list.reload()}>
               重新加载
             </Button>
           </div>
@@ -199,7 +246,7 @@ export default function DashboardAnnouncements() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            <For each={filtered()}>
+            <For each={list.data().items}>
               {item => (
                 <TableRow>
                   <TableCell>
@@ -285,10 +332,10 @@ export default function DashboardAnnouncements() {
               )}
             </For>
 
-            <Show when={filtered().length === 0}>
+            <Show when={list.data().items.length === 0}>
               <TableRow>
                 <TableCell class="py-10 text-center text-muted-foreground" colSpan={6}>
-                  {loading()
+                  {list.loading()
                     ? "正在加载…"
                     : filter() === "all"
                       ? "还没有公告，点右上角「新建公告」发一条"
@@ -298,13 +345,26 @@ export default function DashboardAnnouncements() {
             </Show>
           </TableBody>
         </Table>
+
+        <div class="border-t">
+          <PagerIfNeeded
+            page={page()}
+            size={size()}
+            total={list.data().total}
+            onPageChange={setPage}
+            onSizeChange={next => {
+              setSize(next);
+              setPage(1);
+            }}
+          />
+        </div>
       </Card>
 
       <AnnouncementForm
         open={formOpen()}
         item={editing()}
         onOpenChange={setFormOpen}
-        onSaved={() => void reload()}
+        onSaved={() => void refresh()}
       />
 
       <Dialog

@@ -5,7 +5,7 @@
  * 请求都是同源的，会话 cookie 由浏览器自己带上，不用再设 Authorization。
  */
 
-import { ApiError, request } from "./api-client";
+import { ApiError, query, request } from "./api-client";
 
 export type Severity = "info" | "warning" | "urgent";
 
@@ -114,10 +114,50 @@ export function markAllNotificationsRead() {
 
 /* ------------------------------------------------------- 管理端：公告 */
 
-/** 管理端列表，草稿与归档的也在里面 */
-export async function fetchAdminAnnouncements() {
-  const data = await request<{ items: Announcement[]; total: number }>("/api/admin/announcements");
-  return data.items ?? [];
+/** 管理端公告列表的查询条件。status 传 undefined 表示不筛 */
+export type AdminAnnouncementQuery = {
+  page?: number;
+  size?: number;
+  status?: string;
+};
+
+/** 各状态的公告条数，全是全站口径，不随列表的 status 筛选变 */
+export type AnnouncementStatusCounts = {
+  total: number;
+  draft: number;
+  published: number;
+  archived: number;
+};
+
+/** 管理端公告列表的一页：列表本身加上页头卡片要的计数 */
+export type AdminAnnouncementPage = {
+  items: Announcement[];
+  /** 当前筛选条件下的总条数，翻页用 */
+  total: number;
+  status_counts: AnnouncementStatusCounts;
+};
+
+/**
+ * 管理端列表，草稿与归档的也在里面。
+ *
+ * 收 page / size / status，一次把列表、筛选后的 `total` 与各状态的全站条数
+ * （`status_counts`）都取回来。后端一直是分页接口（默认一页 20 条），早先这里
+ * 只回 `items`，页面上就把它当成了全部：统计卡、条数、翻页全按第一页算。
+ *
+ * 卡片计数为什么跟列表同一次请求：分页接口只给一页的 items，数 items 得不出
+ * 全量（「已发布」有 30 条而当前停在草稿页时，会数出 0）。原先是前端再按状态各发
+ * 一次 `size=1` 的请求去凑四个数 —— 那四次请求换来的就是这里的 `status_counts`，
+ * 现在由后端在同一次查询里 `GROUP BY status`，前端不再自己去拼。
+ * 别照 `recharge.tsx` 那样从 items 里数：那页的卡片标了「本页」，这页的卡片是全站。
+ */
+export function fetchAdminAnnouncements(input: AdminAnnouncementQuery = {}) {
+  return request<AdminAnnouncementPage>(
+    `/api/admin/announcements${query({
+      page: input.page,
+      size: input.size,
+      status: input.status,
+    })}`,
+  );
 }
 
 export type AnnouncementInput = {
